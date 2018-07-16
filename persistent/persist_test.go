@@ -71,7 +71,8 @@ func TestWritesToDB_Next(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	p := &persist{b: internal.NewLeftmostOldestBasePicker(), m: &sync.Mutex{}, db: db}
+	p := &persist{
+		b: internal.NewLeftmostOldestBasePicker(), m: &sync.Mutex{}, db: db}
 
 	verifyNilError(t, p.Add("a"))
 	verifyNilError(t, p.Add("b"))
@@ -133,20 +134,29 @@ func TestWritesToDB_Next(t *testing.T) {
 	}
 }
 
-func TestReadsFromDB_AddAddAll(t *testing.T) {
+func TestReadsFromDB_Add(t *testing.T) {
 	store := storage.NewMemStorage()
 	db, err := leveldb.Open(store, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	p := &persist{b: internal.NewLeftmostOldestBasePicker(), m: &sync.Mutex{}, db: db}
+	p := &persist{
+		b: internal.NewLeftmostOldestBasePicker(), m: &sync.Mutex{}, db: db}
 
 	verifyNilError(t, p.AddAll([]string{"a", "b", "c"}))
+	// Bump all generations by one to set up the problematic test
+	ss, err := p.NextN(3)
+	verifyNilError(t, err)
+	if !reflect.DeepEqual(ss, []string{"a", "b", "c"}) {
+		t.Errorf("Unexpected response from NextN(), expected abc, got %v", ss)
+	}
+
 	s, err := p.Next() // Reads "a"
 	verifyNilError(t, err)
 
-	p = &persist{b: internal.NewLeftmostOldestBasePicker(), m: &sync.Mutex{}, db: db}
+	p = &persist{
+		b: internal.NewLeftmostOldestBasePicker(), m: &sync.Mutex{}, db: db}
 
 	verifyNilError(t, p.Add("a"))
 	verifyNilError(t, p.Add("b"))
@@ -156,6 +166,32 @@ func TestReadsFromDB_AddAddAll(t *testing.T) {
 		t.Fatalf("Next() was not b")
 	}
 
+	p = &persist{
+		b: internal.NewLeftmostOldestBasePicker(), m: &sync.Mutex{}, db: db}
+	// "d" is set to the same generation as c, not an older one
+	verifyNilError(t, p.AddAll([]string{"d", "a", "b", "c"}))
+
+	s, err = p.Next()
+	verifyNilError(t, err)
+	if s != "c" {
+		t.Fatalf("Next() was not c")
+	}
+
+	// This is the problematic case that persistent pickers do not handle well
+	// Any Add/AddAll that don't overlap keys in the database will get the
+	// default gen to 0
+	p = &persist{
+		b: internal.NewLeftmostOldestBasePicker(), m: &sync.Mutex{}, db: db}
+	verifyNilError(t, p.Add("e"))
+	verifyNilError(t, p.AddAll([]string{"f", "g"}))
+	verifyNilError(t, p.AddAll([]string{"d", "a", "b", "c"}))
+
+	ss, err = p.NextN(4)
+	verifyNilError(t, err)
+	// TODO -- Once fixed this will return "defg"
+	if !reflect.DeepEqual(ss, []string{"e", "f", "g", "d"}) {
+		t.Errorf("Unexpected response from NextN(), expected efgd, got %v", ss)
+	}
 }
 
 func verifyNilError(t *testing.T, err error) {
