@@ -1,0 +1,3 @@
+Build a red/black tree
+
+pointer to left, right, number of children, min generation, max generation
