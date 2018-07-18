@@ -89,7 +89,7 @@ func (t *persist) Add(s string) error {
 
 	// If binary.Varint failed err will be nil
 	if err == nil || err == leveldb.ErrNotFound {
-		return t.load(s, t.minGen)
+		return t.loadAndPutGen(s, t.minGen)
 	}
 
 	return err
@@ -139,7 +139,7 @@ func (t *persist) AddAll(ss []string) error {
 	}
 
 	for _, s := range dbMiss {
-		err = t.load(s, t.minGen)
+		err = t.loadAndPutGen(s, t.minGen)
 		if err != nil {
 			return err
 		}
@@ -150,7 +150,7 @@ func (t *persist) AddAll(ss []string) error {
 
 // buf could be provided as a parameter for increased efficiency in AddAll
 // Does _not_ check minGen
-func (t *persist) load(s string, g int) error {
+func (t *persist) loadAndPutGen(s string, g int) error {
 	loaded, err := t.b.Load(s, g)
 
 	if err == nil && loaded {

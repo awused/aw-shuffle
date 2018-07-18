@@ -316,9 +316,9 @@ func TestRandomWeightedGeneration(t *testing.T) {
 }
 
 func verifyNewGeneration(t *testing.T, new int, old int) {
-	if new <= old {
+	if new != old+1 {
 		t.Errorf(
-			"New generation [%d] must be younger than old generation [%d]", new, old)
+			"New generation [%d] must be old generation [%d] plus one", new, old)
 	}
 }
 

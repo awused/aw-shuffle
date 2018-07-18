@@ -24,9 +24,6 @@ fiveUniqueStrings, _ := picker.UniqueN(5)
 picker.Close()
 ```
 
-Use `SetBias(bias float64)` to control how strongly the picker avoids recently selected items. `bias` must be non-negative, and larger values bias more heavily towards older items. A bias of 0 causes the picker to effectively ignore the age of the items, making all items equally likely to be selected, while +Inf will result in the picker exclusively picking items of the oldest generation. The default bias is 2.
-
-<!-- SetRandomFunc(func(range int): int) -->
 <!-- to change the weighting of the randomizer to control how heavily it favours older selections. Must output an integer in [0, range]. range may be 0 -->
 <!-- Higher values means selecting older items, returning range will mean one of the oldest items is always selected. -->
 <!--  -->
@@ -79,23 +76,41 @@ persist.Close()
 
 ## Closing
 
-Use `Close()` to safely destroy persistent pickers. Calling any methods on a closed picker is an error.
-
+Use `Close()` to safely close persistent pickers. Calling any methods on a closed picker is an error.
 
 ## API
 
-Next() (string, err)
+SetBias(bias float64)
+Controls how strongly the picker avoids recently selected items. `bias` must be non-negative and larger values of bias cause the picker to bias itself more heavily towards older items.
 
-NextN(int n) (string, err)
+A bias of 0 causes the picker to effectively ignore the age of the items, making all items equally likely to be selected, while +Inf will result in the picker exclusively picking items of the oldest generation. The default bias is 2.
+
+<!-- SetRandomFunc(func(range int): int) -->
+
+Next()
+Randomly selects the next string
+
+NextN(n int)
 Chooses n entries that may not be unique, and assigns them all the same generation. 
 
-UniqueN(int n): (p[string, err)
+UniqueN(n int)
 Chooses n unique strings or returns an error if Size() < n.
 
-Add(string|[]string)
-If the string already exists this does nothing
+Add(s string)
+AddAll(ss []string)
+Adds strings to the picker, if they're already present this does nothing
 
-Remove(string|[]string)
+Remove(s string)
+RemoveAll(ss []string)
+Removes strings, if they're not present this does nothing
+
+Size()
+Returns the current number of strings
+
+Values() []string
+Returns every value, in order, in the tree. This is the only O(n) operation.
+
+<!-- TODO Link to docs -->
 
 # How It Works
 
