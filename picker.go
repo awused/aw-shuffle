@@ -63,6 +63,13 @@ func (t *picker) UniqueN(n int) ([]string, error) {
 	return ss, err
 }
 
+func (t *picker) SetBias(bi float64) error {
+	t.m.Lock()
+	err := t.b.SetBias(bi)
+	t.m.Unlock()
+	return err
+}
+
 func (t *picker) Size() (int, error) {
 	t.m.Lock()
 	sz, err := t.b.Size()

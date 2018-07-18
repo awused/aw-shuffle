@@ -47,6 +47,10 @@ func (t *unsafe) UniqueN(n int) ([]string, error) {
 	return ss, err
 }
 
+func (t *unsafe) SetBias(bi float64) error {
+	return t.b.SetBias(bi)
+}
+
 func (t *unsafe) Size() (int, error) {
 	return t.b.Size()
 }

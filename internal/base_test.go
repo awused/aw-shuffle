@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"math"
 	"reflect"
 	"testing"
 )
@@ -12,6 +13,13 @@ func TestSingleElement(t *testing.T) {
 		t.Error(err)
 	}
 	verifySize(t, b, 1)
+
+	if !b.Contains("a") {
+		t.Error("Base unexpectedly doesn't contain a")
+	}
+	if b.Contains("b") {
+		t.Error("Base unexpectedly contains b")
+	}
 
 	v, g2, err := b.Next()
 	if err != nil {
@@ -185,24 +193,29 @@ func TestBaseEmpty(t *testing.T) {
 	verifyError(t, err, ErrEmpty)
 }
 
-func TestNegativeN(t *testing.T) {
+func TestInvalidNumbers(t *testing.T) {
 	b := NewBasePicker()
 
 	b.Add("a")
 
 	_, _, err := b.NextN(-1)
-	verifyError(t, err, ErrNegativeN)
+	verifyError(t, err, ErrNegative)
 	_, _, err = b.UniqueN(-1)
-	verifyError(t, err, ErrNegativeN)
+	verifyError(t, err, ErrNegative)
+
+	err = b.SetBias(-1)
+	verifyError(t, err, ErrNegative)
+	err = b.SetBias(math.Inf(-1))
+	verifyError(t, err, ErrNegative)
+	err = b.SetBias(math.NaN())
+	verifyError(t, err, ErrNaN)
 }
 
 func TestBaseClosed(t *testing.T) {
 	b := NewBasePicker()
 	b.Close()
 
-	_, err := b.Size()
-	verifyError(t, err, ErrClosed)
-	_, _, err = b.Add("a")
+	_, _, err := b.Add("a")
 	verifyError(t, err, ErrClosed)
 	_, _, err = b.AddAll([]string{"a"})
 	verifyError(t, err, ErrClosed)
@@ -218,12 +231,17 @@ func TestBaseClosed(t *testing.T) {
 	verifyError(t, err, ErrClosed)
 	_, _, err = b.UniqueN(5)
 	verifyError(t, err, ErrClosed)
+	err = b.SetBias(100)
+	verifyError(t, err, ErrClosed)
+	_, err = b.Size()
+	verifyError(t, err, ErrClosed)
 	_, err = b.Values()
 	verifyError(t, err, ErrClosed)
 }
 
 func TestRandomWeightedGeneration(t *testing.T) {
-	b := Base{r: newFakeRandom([]int{}, []float64{0, 1, 0.5}), t: &Rbtree{}}
+	b := Base{
+		r: newFakeRandom([]int{}, []float64{0, 1, 0.5}), t: &Rbtree{}, bias: 2}
 
 	b.LoadAll([]string{"0", "1"}, []int{11, 111})
 	// Test that the bounds hold even in an impossible case
@@ -244,6 +262,56 @@ func TestRandomWeightedGeneration(t *testing.T) {
 	b.Remove("0")
 	if g := b.randomWeightedGeneration(); g != 111 {
 		t.Errorf("Unexpected generation produced, got %d expected %d", g, 111)
+	}
+
+	b = Base{
+		r: newFakeRandom([]int{}, []float64{0, 1, 0.5}), t: &Rbtree{}, bias: 1}
+	b.LoadAll([]string{"0", "1"}, []int{11, 111})
+
+	if g := b.randomWeightedGeneration(); g != 11 {
+		t.Errorf("Unexpected generation produced, got %d expected %d", g, 11)
+	}
+	if g := b.randomWeightedGeneration(); g != 111 {
+		t.Errorf("Unexpected generation produced, got %d expected %d", g, 111)
+	}
+	if g := b.randomWeightedGeneration(); g != 61 {
+		t.Errorf("Unexpected generation produced, got %d expected %d", g, 61)
+	}
+
+	_ = b.SetBias(0.5)
+
+	if g := b.randomWeightedGeneration(); g != 11 {
+		t.Errorf("Unexpected generation produced, got %d expected %d", g, 11)
+	}
+	if g := b.randomWeightedGeneration(); g != 111 {
+		t.Errorf("Unexpected generation produced, got %d expected %d", g, 111)
+	}
+	if g := b.randomWeightedGeneration(); g != 82 {
+		t.Errorf("Unexpected generation produced, got %d expected %d", g, 82)
+	}
+
+	_ = b.SetBias(0)
+
+	if g := b.randomWeightedGeneration(); g != 111 {
+		t.Errorf("Unexpected generation produced, got %d expected %d", g, 111)
+	}
+	if g := b.randomWeightedGeneration(); g != 111 {
+		t.Errorf("Unexpected generation produced, got %d expected %d", g, 111)
+	}
+	if g := b.randomWeightedGeneration(); g != 111 {
+		t.Errorf("Unexpected generation produced, got %d expected %d", g, 111)
+	}
+
+	_ = b.SetBias(math.Inf(1))
+
+	if g := b.randomWeightedGeneration(); g != 11 {
+		t.Errorf("Unexpected generation produced, got %d expected %d", g, 11)
+	}
+	if g := b.randomWeightedGeneration(); g != 111 {
+		t.Errorf("Unexpected generation produced, got %d expected %d", g, 111)
+	}
+	if g := b.randomWeightedGeneration(); g != 11 {
+		t.Errorf("Unexpected generation produced, got %d expected %d", g, 11)
 	}
 }
 

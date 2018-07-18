@@ -15,16 +15,17 @@ type Base struct {
 	closed bool
 	r      random
 	t      *Rbtree
+	bias   float64
 }
 
 func NewBasePicker() *Base {
-	return &Base{r: newDefaultRandom(), t: &Rbtree{}}
+	return &Base{r: newDefaultRandom(), t: &Rbtree{}, bias: 2}
 }
 
 // A Base picker that always returns the leftmost, oldest element
 // For testing purposes only
 func NewLeftmostOldestBasePicker() *Base {
-	return &Base{r: newFakeRandom([]int{0}, []float64{0}), t: &Rbtree{}}
+	return &Base{r: newFakeRandom([]int{0}, []float64{0}), t: &Rbtree{}, bias: 2}
 }
 
 func (b *Base) Add(s string) (bool, int, error) {
@@ -131,7 +132,7 @@ func (b *Base) NextN(n int) ([]string, int, error) {
 		return nil, 0, ErrEmpty
 	}
 	if n < 0 {
-		return nil, 0, ErrNegativeN
+		return nil, 0, ErrNegative
 	}
 	g := b.nextGeneration()
 	if g == int(^uint(0)>>1) {
@@ -167,7 +168,7 @@ func (b *Base) UniqueN(n int) ([]string, int, error) {
 		return nil, 0, ErrEmpty
 	}
 	if n < 0 {
-		return nil, 0, ErrNegativeN
+		return nil, 0, ErrNegative
 	}
 	if b.t.size < n {
 		return nil, 0, ErrInsufficientUnique
@@ -203,6 +204,25 @@ func (b *Base) findNext() (*rbnode, error) {
 	return b.t.findNext(index, gen)
 }
 
+func (b *Base) Contains(s string) bool {
+	return b.t.findNode(s) != nil
+}
+
+func (b *Base) SetBias(bi float64) error {
+	if b.closed {
+		return ErrClosed
+	}
+	if math.IsNaN(bi) {
+		return ErrNaN
+	}
+	if bi < 0 {
+		return ErrNegative
+	}
+
+	b.bias = bi
+	return nil
+}
+
 func (b *Base) Size() (int, error) {
 	if b.closed {
 		return 0, ErrClosed
@@ -223,6 +243,20 @@ func (b *Base) Close() error {
 	b.t = nil
 	b.r = nil
 	return nil
+}
+
+func (b *Base) Closed() error {
+	if b.closed {
+		return ErrClosed
+	}
+	return nil
+}
+
+func (b *Base) MinGen() int {
+	if b.t != nil && b.t.root != nil {
+		return b.t.root.minGen
+	}
+	return 0
 }
 
 // Newly inserted elements are considered as old as the oldest item in the tree
@@ -246,7 +280,7 @@ func (b *Base) randomWeightedGeneration() int {
 
 	span := b.t.root.maxGen - b.t.root.minGen
 	// Add one and use Floor() to ensure it can pick every possible generation
-	offset := float64(span+1) * math.Pow(b.r.Float64(), 2)
+	offset := float64(span+1) * math.Pow(b.r.Float64(), b.bias)
 	floor := int(math.Floor(offset))
 	if floor > span {
 		// Should not happen

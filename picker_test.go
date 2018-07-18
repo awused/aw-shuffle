@@ -37,6 +37,8 @@ func TestPickerFunctionality(t *testing.T) {
 	verifyError(t, err, nil)
 	verifyStrings(t, ss, []string{"a"})
 
+	verifyError(t, p.SetBias(123), nil)
+
 	err = p.Close()
 	verifyError(t, err, nil)
 

@@ -2,11 +2,14 @@ package persistent
 
 import (
 	"encoding/binary"
+	"math"
+	"strings"
 	"sync"
 
 	strpick "github.com/awused/go-strpick"
 	"github.com/awused/go-strpick/internal"
 	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/errors"
 )
 
 type Picker interface {
@@ -37,22 +40,38 @@ type persist struct {
 	b  *internal.Base
 	m  *sync.Mutex
 	db *leveldb.DB
+	// minGen only tracks the minimum generation of the live tree
+	// Older "inactive" values in the DB don't count
+	minGen int
 }
 
 func NewPicker(dir string) (*persist, error) {
 	db, err := leveldb.OpenFile(dir, nil)
+	if errors.IsCorrupted(err) {
+		db, err = leveldb.RecoverFile(dir, nil)
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	return &persist{b: internal.NewBasePicker(), m: &sync.Mutex{}, db: db}, nil
+	p := &persist{b: internal.NewBasePicker(), m: &sync.Mutex{}, db: db}
+
+	return p, p.loadProperties()
 }
 
 func (t *persist) Add(s string) error {
-	bk := []byte(s)
+	bk := stringToByteKey(s)
 
 	defer t.m.Unlock()
 	t.m.Lock()
+
+	if err := t.b.Closed(); err != nil {
+		return err
+	}
+
+	if t.b.Contains(s) {
+		return nil
+	}
 
 	data, err := t.db.Get(bk, nil)
 	if err == nil {
@@ -61,36 +80,37 @@ func (t *persist) Add(s string) error {
 		gen64, n := binary.Varint(data)
 		if n > 0 {
 			_, err = t.b.Load(s, int(gen64))
-			return err
+			if err != nil {
+				return err
+			}
+			return t.checkMinGen()
 		}
 	}
 
 	// If binary.Varint failed err will be nil
 	if err == nil || err == leveldb.ErrNotFound {
-		add, gen, err := t.b.Add(s)
-		if err != nil {
-			return err
-		}
-		if add {
-			buf := make([]byte, binary.MaxVarintLen64)
-			n := binary.PutVarint(buf, int64(gen))
-			return t.db.Put(bk, buf[:n], nil)
-		}
-		return nil
+		return t.load(s, t.minGen)
 	}
 
 	return err
 }
 func (t *persist) AddAll(ss []string) error {
+	err := t.b.Closed()
+	if err != nil {
+		return err
+	}
+
 	defer t.m.Unlock()
 	t.m.Lock()
 
 	var dbMiss []string // Could preallocate, likely not worth it
 
 	for _, s := range ss {
-		bk := []byte(s)
+		if t.b.Contains(s) {
+			continue
+		}
 
-		data, err := t.db.Get(bk, nil)
+		data, err := t.db.Get(stringToByteKey(s), nil)
 		if err != nil && err != leveldb.ErrNotFound {
 			return err
 		}
@@ -111,27 +131,33 @@ func (t *persist) AddAll(ss []string) error {
 		dbMiss = append(dbMiss, s)
 	}
 
-	added, gen, err := t.b.AddAll(dbMiss)
+	// Loading from the DB could have changed the minimum generation
+	// Check this before inserting new elements
+	err = t.checkMinGen()
 	if err != nil {
 		return err
 	}
 
-	buf := make([]byte, binary.MaxVarintLen64)
-	n := binary.PutVarint(buf, int64(gen))
-	buf = buf[:n]
-
-	for i, a := range added {
-		if !a {
-			continue
-		}
-		bk := []byte(dbMiss[i])
-
-		err = t.db.Put(bk, buf, nil)
+	for _, s := range dbMiss {
+		err = t.load(s, t.minGen)
 		if err != nil {
 			return err
 		}
 	}
+
 	return nil
+}
+
+// buf could be provided as a parameter for increased efficiency in AddAll
+// Does _not_ check minGen
+func (t *persist) load(s string, g int) error {
+	loaded, err := t.b.Load(s, g)
+
+	if err == nil && loaded {
+		err = t.dbPutInt(stringToByteKey(s), g)
+	}
+
+	return err
 }
 
 func (t *persist) Remove(s string) error {
@@ -143,7 +169,11 @@ func (t *persist) Remove(s string) error {
 	}
 
 	if removed {
-		return t.db.Delete([]byte(s), nil)
+		err = t.db.Delete(stringToByteKey(s), nil)
+		if err != nil {
+			return err
+		}
+		return t.checkMinGen()
 	}
 	return nil
 }
@@ -157,13 +187,13 @@ func (t *persist) RemoveAll(ss []string) error {
 
 	for i, r := range removed {
 		if r {
-			err = t.db.Delete([]byte(ss[i]), nil)
+			err = t.db.Delete(stringToByteKey(ss[i]), nil)
 			if err != nil {
 				return err
 			}
 		}
 	}
-	return nil
+	return t.checkMinGen()
 }
 
 func (t *persist) Next() (string, error) {
@@ -175,11 +205,12 @@ func (t *persist) Next() (string, error) {
 		return "", err
 	}
 
-	buf := make([]byte, binary.MaxVarintLen64)
-	n := binary.PutVarint(buf, int64(g))
-	err = t.db.Put([]byte(s), buf[:n], nil)
+	err = t.dbPutInt(stringToByteKey(s), g)
+	if err != nil {
+		return "", err
+	}
 
-	return s, err
+	return s, t.checkMinGen()
 }
 func (t *persist) NextN(n int) ([]string, error) {
 	defer t.m.Unlock()
@@ -190,17 +221,13 @@ func (t *persist) NextN(n int) ([]string, error) {
 		return ss, err
 	}
 
-	buf := make([]byte, binary.MaxVarintLen64)
-	bc := binary.PutVarint(buf, int64(g))
-	buf = buf[:bc]
-
 	for _, s := range ss {
-		err = t.db.Put([]byte(s), buf, nil)
+		err = t.dbPutInt(stringToByteKey(s), g)
 		if err != nil {
 			return ss, err
 		}
 	}
-	return ss, err
+	return ss, t.checkMinGen()
 }
 func (t *persist) UniqueN(n int) ([]string, error) {
 	defer t.m.Unlock()
@@ -211,17 +238,24 @@ func (t *persist) UniqueN(n int) ([]string, error) {
 		return ss, err
 	}
 
-	buf := make([]byte, binary.MaxVarintLen64)
-	bc := binary.PutVarint(buf, int64(g))
-	buf = buf[:bc]
-
 	for _, s := range ss {
-		err = t.db.Put([]byte(s), buf, nil)
+		err = t.dbPutInt(stringToByteKey(s), g)
 		if err != nil {
 			return ss, err
 		}
 	}
-	return ss, err
+	return ss, t.checkMinGen()
+}
+
+func (t *persist) SetBias(bi float64) error {
+	defer t.m.Unlock()
+	t.m.Lock()
+
+	if err := t.b.SetBias(bi); err != nil {
+		return err
+	}
+
+	return t.saveBias(bi)
 }
 
 func (t *persist) Size() (int, error) {
@@ -249,4 +283,70 @@ func (t *persist) Close() error {
 
 	err = t.b.Close()
 	return err
+}
+
+var minGenProp = []byte("p:mingen")
+var biasProp = []byte("p:bias")
+
+func (t *persist) loadProperties() error {
+	data, err := t.db.Get(minGenProp, nil)
+	if err == nil {
+		gen64, n := binary.Varint(data)
+		if n > 0 {
+			t.minGen = int(gen64)
+		}
+	} else if err != leveldb.ErrNotFound {
+		return err
+	}
+
+	data, err = t.db.Get(biasProp, nil)
+	if err == nil {
+		bits := binary.LittleEndian.Uint64(data)
+		bias := math.Float64frombits(bits)
+
+		err = t.b.SetBias(bias)
+
+		if err != nil {
+			return err
+		}
+	} else if err != leveldb.ErrNotFound {
+		return err
+	}
+
+	return nil
+}
+
+// It's necessary to call this a lot, because it's possible for minGen to
+// change on Add/AddAll if an old value was loaded from the DB
+func (t *persist) checkMinGen() error {
+	if t.b.MinGen() != t.minGen {
+		t.minGen = t.b.MinGen()
+		return t.dbPutInt(minGenProp, t.minGen)
+	}
+
+	return nil
+}
+
+func (t *persist) saveBias(bi float64) error {
+	bits := math.Float64bits(bi)
+	buf := make([]byte, 8)
+	binary.LittleEndian.PutUint64(buf, bits)
+	return t.db.Put(biasProp, buf, nil)
+}
+
+const keyPrefix = "s:"
+
+func stringToByteKey(s string) []byte {
+	return []byte(keyPrefix + s)
+}
+
+func byteKeyToString(b []byte) string {
+	return strings.Trim(string(b), keyPrefix)
+}
+
+func (t *persist) dbPutInt(key []byte, g int) error {
+	// Could attach this buffer to the persist struct and reuse it
+	buf := make([]byte, binary.MaxVarintLen64)
+	n := binary.PutVarint(buf, int64(g))
+	return t.db.Put(key, buf[:n], nil)
 }

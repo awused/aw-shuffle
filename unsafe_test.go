@@ -40,6 +40,8 @@ func TestUnsafeFunctionality(t *testing.T) {
 	verifyError(t, err, nil)
 	verifyStrings(t, ss, []string{"a"})
 
+	verifyError(t, u.SetBias(123), nil)
+
 	err = u.Close()
 	verifyError(t, err, nil)
 

@@ -24,6 +24,8 @@ fiveUniqueStrings, _ := picker.UniqueN(5)
 picker.Close()
 ```
 
+Use `SetBias(bias float64)` to control how strongly the picker avoids recently selected items. `bias` must be non-negative, and larger values bias more heavily towards older items. A bias of 0 causes the picker to effectively ignore the age of the items, making all items equally likely to be selected, while +Inf will result in the picker exclusively picking items of the oldest generation. The default bias is 2.
+
 <!-- SetRandomFunc(func(range int): int) -->
 <!-- to change the weighting of the randomizer to control how heavily it favours older selections. Must output an integer in [0, range]. range may be 0 -->
 <!-- Higher values means selecting older items, returning range will mean one of the oldest items is always selected. -->

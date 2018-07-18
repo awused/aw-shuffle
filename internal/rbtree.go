@@ -67,18 +67,9 @@ func (t *Rbtree) insert(k string, g int) bool {
 	return true
 }
 
-func (t *Rbtree) delete(k string) bool {
-	if t.root == nil {
-		return false
-	}
-
+func (t *Rbtree) findNode(k string) *rbnode {
 	n := t.root
-	for true {
-		if n == nil {
-			// Key doesn't exist in tree
-			return false
-		}
-
+	for n != nil {
 		if n.key == k {
 			break
 		} else if k < n.key {
@@ -86,6 +77,18 @@ func (t *Rbtree) delete(k string) bool {
 		} else {
 			n = n.right
 		}
+	}
+	return n
+}
+
+func (t *Rbtree) delete(k string) bool {
+	if t.root == nil {
+		return false
+	}
+
+	n := t.findNode(k)
+	if n == nil {
+		return false
 	}
 
 	t.size--

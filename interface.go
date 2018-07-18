@@ -7,7 +7,8 @@ var (
 	ErrEmpty              = internal.ErrEmpty
 	ErrCorrupt            = internal.ErrCorrupt
 	ErrOverflow           = internal.ErrOverflow
-	ErrNegativeN          = internal.ErrNegativeN
+	ErrNegative           = internal.ErrNegative
+	ErrNaN                = internal.ErrNaN
 	ErrInsufficientUnique = internal.ErrInsufficientUnique
 )
 
@@ -21,6 +22,8 @@ type Picker interface {
 	Next() (string, error)
 	NextN(int) ([]string, error)
 	UniqueN(int) ([]string, error)
+
+	SetBias(float64) error
 
 	Size() (int, error)
 	Values() ([]string, error)
