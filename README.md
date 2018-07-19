@@ -123,7 +123,9 @@ To select the next item it randomly selects a number between the maximum and min
 
 # Limitations
 
-This library heavily biases towards picking less recently picked strings. This library doesn't provide any guarantees of fairness and is not suitable for applications where such guarantees are required. The design goal was to give fast results without risking integer overflows when handling many items over many generations.
+All strings need to be kept in memory, for comparison purposes, and there are currently 80 bytes of additional overhead per string.
+
+This library heavily biases towards picking less recently picked strings, but not in a way that is easy to define mathematically. This library doesn't provide any guarantees of fairness and is not suitable for applications where such guarantees are required. The design goal was to give fast results without risking integer overflows when handling many items over many generations.
 
 Int is used internally and pickers detect but don't handle integer overflows. If an ErrOverflow is returned nothing can be done, at this point in time, except recreating the picker. This will probably never be a concern for users on 64 bit platforms so I've elected not to put much effort into handling it, at least for now.
 

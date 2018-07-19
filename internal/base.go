@@ -61,8 +61,21 @@ func (b *Base) Load(s string, g int) (bool, error) {
 	return b.t.insert(s, g), nil
 }
 
-// For loading data from a database
-func (b *Base) LoadAll(ss []string, gs []int) ([]bool, error) {
+func (b *Base) LoadAll(ss []string, g int) ([]bool, error) {
+	if b.closed {
+		return nil, ErrClosed
+	}
+
+	out := make([]bool, len(ss), len(ss))
+	for i, s := range ss {
+		out[i] = b.t.insert(s, g)
+	}
+
+	return out, nil
+}
+
+// Only gets called when loading values from a DB
+func (b *Base) LoadDB(ss []string, gs []int) ([]bool, error) {
 	if b.closed {
 		return nil, ErrClosed
 	}

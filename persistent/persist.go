@@ -10,17 +10,25 @@ import (
 	"github.com/awused/go-strpick/internal"
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/errors"
+	"github.com/syndtr/goleveldb/leveldb/filter"
+	"github.com/syndtr/goleveldb/leveldb/opt"
+	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
 type Picker interface {
 	strpick.Picker
 
+	// Removes a string from the tree without removing it from the underlying
+	// database. Use these methods when you want to continue to track
+	SoftRemove(string) error
+	SoftRemoveAll([]string) error
+
 	// Loads all existing keys from the database.
 	// Calling this is not necessary in the case where the caller can supply
 	// every valid string, values will be loaded as needed in Add and AddAll.
 	LoadDB() error
-	// Removes any keys not _currently_ present in thise Picker from the database
-	// Also runs a compaction, should only be called when necessary.
+	// Removes any keys not _currently_ present in this Picker from the database.
+	// This includes any strings that have been removed using SoftRemove().
 	CleanDB() error
 }
 
@@ -45,10 +53,16 @@ type persist struct {
 	minGen int
 }
 
-func NewPicker(dir string) (*persist, error) {
-	db, err := leveldb.OpenFile(dir, nil)
+func NewPicker(dir string) (Picker, error) {
+	// Bloom filters use constant extra space per SSTable to enhance read
+	// performance. This is beneficial when adding new strings to the tree.
+	o := &opt.Options{
+		Filter: filter.NewBloomFilter(10),
+	}
+
+	db, err := leveldb.OpenFile(dir, o)
 	if errors.IsCorrupted(err) {
-		db, err = leveldb.RecoverFile(dir, nil)
+		db, err = leveldb.RecoverFile(dir, o)
 	}
 	if err != nil {
 		return nil, err
@@ -60,12 +74,11 @@ func NewPicker(dir string) (*persist, error) {
 }
 
 func (t *persist) Add(s string) error {
-	bk := stringToByteKey(s)
-
 	defer t.m.Unlock()
 	t.m.Lock()
 
-	if err := t.b.Closed(); err != nil {
+	err := t.b.Closed()
+	if err != nil {
 		return err
 	}
 
@@ -73,7 +86,7 @@ func (t *persist) Add(s string) error {
 		return nil
 	}
 
-	data, err := t.db.Get(bk, nil)
+	data, err := t.db.Get(stringToByteKey(s), nil)
 	if err == nil {
 		// Unless a very long-lived DB is moved from a 64 to 32 bit environment
 		// converting from int64 to int won't involve truncation
@@ -95,13 +108,13 @@ func (t *persist) Add(s string) error {
 	return err
 }
 func (t *persist) AddAll(ss []string) error {
+	defer t.m.Unlock()
+	t.m.Lock()
+
 	err := t.b.Closed()
 	if err != nil {
 		return err
 	}
-
-	defer t.m.Unlock()
-	t.m.Lock()
 
 	var dbMiss []string // Could preallocate, likely not worth it
 
@@ -145,21 +158,19 @@ func (t *persist) AddAll(ss []string) error {
 		}
 	}
 
+	if len(dbMiss) > 0 {
+		loaded, err := t.b.LoadAll(ss, t.minGen)
+		if err != nil {
+			return err
+		}
+		return t.batchPutGen(dbMiss, t.minGen, loaded)
+	}
+
 	return nil
 }
 
-// buf could be provided as a parameter for increased efficiency in AddAll
-// Does _not_ check minGen
-func (t *persist) loadAndPutGen(s string, g int) error {
-	loaded, err := t.b.Load(s, g)
-
-	if err == nil && loaded {
-		err = t.dbPutInt(stringToByteKey(s), g)
-	}
-
-	return err
-}
-
+// Remove/RemoveAll will not remove a string from the DB unless it is present
+// in the live tree
 func (t *persist) Remove(s string) error {
 	defer t.m.Unlock()
 	t.m.Lock()
@@ -180,6 +191,7 @@ func (t *persist) Remove(s string) error {
 func (t *persist) RemoveAll(ss []string) error {
 	defer t.m.Unlock()
 	t.m.Lock()
+
 	removed, err := t.b.RemoveAll(ss)
 	if err != nil {
 		return err
@@ -221,11 +233,9 @@ func (t *persist) NextN(n int) ([]string, error) {
 		return ss, err
 	}
 
-	for _, s := range ss {
-		err = t.dbPutInt(stringToByteKey(s), g)
-		if err != nil {
-			return ss, err
-		}
+	err = t.batchPutGen(ss, g, nil)
+	if err != nil {
+		return ss, err
 	}
 	return ss, t.checkMinGen()
 }
@@ -238,11 +248,9 @@ func (t *persist) UniqueN(n int) ([]string, error) {
 		return ss, err
 	}
 
-	for _, s := range ss {
-		err = t.dbPutInt(stringToByteKey(s), g)
-		if err != nil {
-			return ss, err
-		}
+	err = t.batchPutGen(ss, g, nil)
+	if err != nil {
+		return ss, err
 	}
 	return ss, t.checkMinGen()
 }
@@ -282,6 +290,94 @@ func (t *persist) Close() error {
 	}
 
 	err = t.b.Close()
+	return err
+}
+
+func (t *persist) SoftRemove(s string) error {
+	defer t.m.Unlock()
+	t.m.Lock()
+	_, err := t.b.Remove(s)
+	if err != nil {
+		return err
+	}
+	return t.checkMinGen()
+}
+func (t *persist) SoftRemoveAll(ss []string) error {
+	defer t.m.Unlock()
+	t.m.Lock()
+	_, err := t.b.RemoveAll(ss)
+	if err != nil {
+		return err
+	}
+	return t.checkMinGen()
+}
+
+func (t *persist) LoadDB() error {
+	defer t.m.Unlock()
+	t.m.Lock()
+
+	err := t.b.Closed()
+	if err != nil {
+		return err
+	}
+
+	iter := t.db.NewIterator(&util.Range{Start: []byte("s:"), Limit: []byte("t:")}, nil)
+
+	for iter.Next() {
+		gen64, n := binary.Varint(iter.Value())
+		var g int
+		if n > 0 {
+			g = int(gen64)
+		} else {
+			// Failed to read it, there's no possible recovery
+			// Set g to whatever minGen is now
+			g = t.minGen
+		}
+
+		t.b.Load(byteKeyToString(iter.Key()), g)
+	}
+
+	err = iter.Error()
+	if err != nil {
+		return err
+	}
+
+	return t.checkMinGen()
+}
+
+func (t *persist) CleanDB() error {
+	return nil
+}
+
+// Put generations for all modified keys
+// Since we're storing the same gen many times, we can save on allocations
+// mask may be nil
+func (t *persist) batchPutGen(ss []string, g int, mask []bool) error {
+	buf := make([]byte, binary.MaxVarintLen64)
+	n := binary.PutVarint(buf, int64(g))
+	buf = buf[:n]
+
+	batch := new(leveldb.Batch)
+	for i, s := range ss {
+		if mask == nil || mask[i] {
+			batch.Put(stringToByteKey(s), buf)
+		}
+	}
+
+	if batch.Len() > 0 {
+		return t.db.Write(batch, nil)
+	}
+	return nil
+}
+
+// Does _not_ call check minGen
+func (t *persist) loadAndPutGen(s string, g int) error {
+	loaded, err := t.b.Load(s, g)
+
+	if err == nil && loaded {
+		err = t.dbPutInt(stringToByteKey(s), g)
+	}
+
 	return err
 }
 
@@ -345,7 +441,6 @@ func byteKeyToString(b []byte) string {
 }
 
 func (t *persist) dbPutInt(key []byte, g int) error {
-	// Could attach this buffer to the persist struct and reuse it
 	buf := make([]byte, binary.MaxVarintLen64)
 	n := binary.PutVarint(buf, int64(g))
 	return t.db.Put(key, buf[:n], nil)

@@ -11,11 +11,7 @@ import (
 )
 
 func TestWritesToDB_AddRemove(t *testing.T) {
-	store := storage.NewMemStorage()
-	db, err := leveldb.Open(store, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	db := newMemDB(t)
 
 	p := &persist{b: internal.NewBasePicker(), m: &sync.Mutex{}, db: db}
 	p.loadProperties()
@@ -66,15 +62,8 @@ func TestWritesToDB_AddRemove(t *testing.T) {
 }
 
 func TestWritesToDB_Next(t *testing.T) {
-	store := storage.NewMemStorage()
-	db, err := leveldb.Open(store, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	p := &persist{
-		b: internal.NewLeftmostOldestBasePicker(), m: &sync.Mutex{}, db: db}
-	p.loadProperties()
+	db := newMemDB(t)
+	p := newPersist(t, db)
 
 	verifyNilError(t, p.Add("a"))
 	verifyNilError(t, p.Add("b"))
@@ -137,15 +126,8 @@ func TestWritesToDB_Next(t *testing.T) {
 }
 
 func TestReadsFromDB_Add(t *testing.T) {
-	store := storage.NewMemStorage()
-	db, err := leveldb.Open(store, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	p := &persist{
-		b: internal.NewLeftmostOldestBasePicker(), m: &sync.Mutex{}, db: db}
-	p.loadProperties()
+	db := newMemDB(t)
+	p := newPersist(t, db)
 
 	verifyNilError(t, p.AddAll([]string{"a", "b", "c"}))
 	// Bump all generations by one to set up the problematic test
@@ -158,9 +140,7 @@ func TestReadsFromDB_Add(t *testing.T) {
 	s, err := p.Next() // Reads "a"
 	verifyNilError(t, err)
 
-	p = &persist{
-		b: internal.NewLeftmostOldestBasePicker(), m: &sync.Mutex{}, db: db}
-	p.loadProperties()
+	p = newPersist(t, db)
 
 	verifyNilError(t, p.Add("a"))
 	verifyNilError(t, p.Add("b"))
@@ -170,9 +150,7 @@ func TestReadsFromDB_Add(t *testing.T) {
 		t.Fatalf("Next() was not b")
 	}
 
-	p = &persist{
-		b: internal.NewLeftmostOldestBasePicker(), m: &sync.Mutex{}, db: db}
-	p.loadProperties()
+	p = newPersist(t, db)
 	// "d" is set to the same generation as c, not an older one
 	verifyNilError(t, p.AddAll([]string{"d", "a", "b", "c"}))
 
@@ -182,10 +160,8 @@ func TestReadsFromDB_Add(t *testing.T) {
 		t.Fatalf("Next() was not c")
 	}
 
-	// This verifies that minGen is correctly persisted and loaded from the DB
-	p = &persist{
-		b: internal.NewLeftmostOldestBasePicker(), m: &sync.Mutex{}, db: db}
-	p.loadProperties()
+	// This part verifies that minGen is correctly persisted and loaded
+	p = newPersist(t, db)
 
 	verifyNilError(t, p.Add("e"))
 	verifyNilError(t, p.AddAll([]string{"f", "g"}))
@@ -201,15 +177,8 @@ func TestReadsFromDB_Add(t *testing.T) {
 }
 
 func TestStoresAndLoadsBias(t *testing.T) {
-	store := storage.NewMemStorage()
-	db, err := leveldb.Open(store, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	p := &persist{
-		b: internal.NewLeftmostOldestBasePicker(), m: &sync.Mutex{}, db: db}
-	p.loadProperties()
+	db := newMemDB(t)
+	p := newPersist(t, db)
 
 	verifyNilError(t, p.AddAll([]string{"a", "b"}))
 
@@ -227,9 +196,7 @@ func TestStoresAndLoadsBias(t *testing.T) {
 		t.Fatalf("Next() was not a")
 	}
 
-	p = &persist{
-		b: internal.NewLeftmostOldestBasePicker(), m: &sync.Mutex{}, db: db}
-	p.loadProperties()
+	p = newPersist(t, db)
 
 	verifyNilError(t, p.AddAll([]string{"a", "b"}))
 
@@ -248,9 +215,7 @@ func TestStoresAndLoadsBias(t *testing.T) {
 		t.Fatalf("Next() was not b")
 	}
 
-	p = &persist{
-		b: internal.NewLeftmostOldestBasePicker(), m: &sync.Mutex{}, db: db}
-	p.loadProperties()
+	p = newPersist(t, db)
 
 	verifyNilError(t, p.AddAll([]string{"a", "b"}))
 
@@ -259,6 +224,109 @@ func TestStoresAndLoadsBias(t *testing.T) {
 	if s != "a" {
 		t.Fatalf("Next() was not a")
 	}
+}
+
+func TestLoadDB(t *testing.T) {
+	db := newMemDB(t)
+	p := newPersist(t, db)
+
+	verifyNilError(t, p.LoadDB())
+	sz, err := p.Size()
+	verifyNilError(t, err)
+	if sz != 0 {
+		t.Fatalf("Unexpected Size() %d", sz)
+	}
+
+	_ = p.AddAll([]string{"a", "b", "c"})
+
+	s, err := p.Next()
+	verifyNilError(t, err)
+	if s != "a" {
+		t.Fatalf("Next() was not a")
+	}
+
+	p = newPersist(t, db)
+	ss, err := p.Values()
+	verifyNilError(t, err)
+	if len(ss) != 0 {
+		t.Fatal("Expected empty Values()")
+	}
+
+	verifyNilError(t, p.LoadDB())
+	ss, err = p.Values()
+	verifyNilError(t, err)
+	if !reflect.DeepEqual(ss, []string{"a", "b", "c"}) {
+		t.Fatalf("Got unexpected values back, expected abc got %v", ss)
+	}
+
+	s, err = p.Next()
+	verifyNilError(t, err)
+	if s != "b" {
+		t.Fatalf("Next() was not b")
+	}
+
+}
+
+func TestSoftRemove(t *testing.T) {
+	db := newMemDB(t)
+	p := newPersist(t, db)
+
+	_ = p.AddAll([]string{"a", "b", "c", "d"})
+
+	ss, err := p.NextN(2)
+	verifyNilError(t, err)
+	if !reflect.DeepEqual(ss, []string{"a", "b"}) {
+		t.Fatalf("NextN(2) was not ab")
+	}
+
+	verifyNilError(t, p.SoftRemove("a"))
+	ss, err = p.Values()
+	if !reflect.DeepEqual(ss, []string{"b", "c", "d"}) {
+		t.Fatalf("Values() was not bcd, got %v, %s", ss, err)
+	}
+
+	verifyNilError(t, p.SoftRemoveAll([]string{"a", "b", "c"}))
+	ss, err = p.Values()
+	if !reflect.DeepEqual(ss, []string{"d"}) {
+		t.Fatalf("Values() was not d, got %v, %s", ss, err)
+	}
+
+	verifyNilError(t, p.LoadDB())
+
+	ss, err = p.Values()
+	if !reflect.DeepEqual(ss, []string{"a", "b", "c", "d"}) {
+		t.Fatalf("Values() was not abcd, got %v, %s", ss, err)
+	}
+
+	ss, err = p.NextN(2)
+	verifyNilError(t, err)
+	if !reflect.DeepEqual(ss, []string{"c", "d"}) {
+		t.Fatalf("NextN(2) was not cd")
+	}
+}
+
+func TestCleanDB(t *testing.T) {
+	// verify it does not touch minGen/bias
+}
+
+func newPersist(t *testing.T, db *leveldb.DB) *persist {
+	p := &persist{
+		b: internal.NewLeftmostOldestBasePicker(), m: &sync.Mutex{}, db: db}
+
+	err := p.loadProperties()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func newMemDB(t *testing.T) *leveldb.DB {
+	store := storage.NewMemStorage()
+	db, err := leveldb.Open(store, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return db
 }
 
 func verifyNilError(t *testing.T, err error) {

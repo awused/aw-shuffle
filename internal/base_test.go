@@ -83,7 +83,7 @@ func TestSingleElement(t *testing.T) {
 func TestAlwaysLeftmostOldest(t *testing.T) {
 	b := NewLeftmostOldestBasePicker()
 
-	_, err := b.LoadAll([]string{"a", "b", "c", "d", "e"}, []int{4, 2, 3, 1, 0})
+	_, err := b.LoadDB([]string{"a", "b", "c", "d", "e"}, []int{4, 2, 3, 1, 0})
 	g := 4
 	if err != nil {
 		t.Error(err)
@@ -171,7 +171,7 @@ func TestAlwaysLeftmostOldest(t *testing.T) {
 }
 func TestOverflow(t *testing.T) {
 	b := NewBasePicker()
-	b.LoadAll([]string{"a", "b"}, []int{0, int(^uint(0)>>1) - 1})
+	b.LoadDB([]string{"a", "b"}, []int{0, int(^uint(0)>>1) - 1})
 
 	// Overflow detection
 	_, _, err := b.Next()
@@ -221,6 +221,10 @@ func TestBaseClosed(t *testing.T) {
 	verifyError(t, err, ErrClosed)
 	_, err = b.Load("a", 1)
 	verifyError(t, err, ErrClosed)
+	_, err = b.LoadAll([]string{"a"}, 1)
+	verifyError(t, err, ErrClosed)
+	_, err = b.LoadDB([]string{"a"}, []int{1})
+	verifyError(t, err, ErrClosed)
 	_, err = b.Remove("a")
 	verifyError(t, err, ErrClosed)
 	_, err = b.RemoveAll([]string{"a"})
@@ -243,7 +247,7 @@ func TestRandomWeightedGeneration(t *testing.T) {
 	b := Base{
 		r: newFakeRandom([]int{}, []float64{0, 1, 0.5}), t: &Rbtree{}, bias: 2}
 
-	b.LoadAll([]string{"0", "1"}, []int{11, 111})
+	b.LoadDB([]string{"0", "1"}, []int{11, 111})
 	// Test that the bounds hold even in an impossible case
 	// (Float64 returns [0, 1), not [0, 1])
 	if g := b.randomWeightedGeneration(); g != 11 {
@@ -266,7 +270,7 @@ func TestRandomWeightedGeneration(t *testing.T) {
 
 	b = Base{
 		r: newFakeRandom([]int{}, []float64{0, 1, 0.5}), t: &Rbtree{}, bias: 1}
-	b.LoadAll([]string{"0", "1"}, []int{11, 111})
+	b.LoadDB([]string{"0", "1"}, []int{11, 111})
 
 	if g := b.randomWeightedGeneration(); g != 11 {
 		t.Errorf("Unexpected generation produced, got %d expected %d", g, 11)
