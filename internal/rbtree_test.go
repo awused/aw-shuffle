@@ -10,7 +10,7 @@ import (
 )
 
 func TestInsert(t *testing.T) {
-	rb := &Rbtree{}
+	rb := &rbtree{}
 
 	rb.insert("5", 0)
 	rb.insert("4", 1)
@@ -25,7 +25,7 @@ func TestInsert(t *testing.T) {
 }
 
 func TestInsert_leftOnly(t *testing.T) {
-	rb := &Rbtree{}
+	rb := &rbtree{}
 
 	rb.insert("5", 0)
 	rb.insert("4", 1)
@@ -46,7 +46,7 @@ func TestInsert_leftOnly(t *testing.T) {
 }
 
 func TestInsert_rightOnly(t *testing.T) {
-	rb := &Rbtree{}
+	rb := &rbtree{}
 
 	rb.insert("1", 0)
 	rb.insert("2", 1)
@@ -63,7 +63,7 @@ func TestInsert_rightOnly(t *testing.T) {
 }
 
 func TestInsert_leftRight(t *testing.T) {
-	rb := &Rbtree{}
+	rb := &rbtree{}
 
 	rb.insert("5", 0)
 	rb.insert("2", 1)
@@ -74,7 +74,7 @@ func TestInsert_leftRight(t *testing.T) {
 }
 
 func TestInsert_rightLeft(t *testing.T) {
-	rb := &Rbtree{}
+	rb := &rbtree{}
 
 	rb.insert("2", 1)
 	rb.insert("5", 0)
@@ -89,7 +89,7 @@ func TestInsertShuffled100000(t *testing.T) {
 	rand.Shuffle(10000, func(i, j int) {
 		keys[i], keys[j] = keys[j], keys[i]
 	})
-	rb := &Rbtree{}
+	rb := &rbtree{}
 	for i, k := range keys {
 		rb.insert(k, i)
 	}
@@ -97,7 +97,7 @@ func TestInsertShuffled100000(t *testing.T) {
 }
 
 func TestDelete_root(t *testing.T) {
-	rb := &Rbtree{}
+	rb := &rbtree{}
 
 	rb.insert("5", 5)
 	rb.insert("2", 2)
@@ -147,7 +147,7 @@ func TestDelete_root(t *testing.T) {
 }
 
 func TestDelete_RedSibling(t *testing.T) {
-	rb := &Rbtree{}
+	rb := &rbtree{}
 
 	rb.insert("1", 0)
 	rb.insert("2", 0)
@@ -160,7 +160,7 @@ func TestDelete_RedSibling(t *testing.T) {
 	rb.delete("1")
 	verifyTreeStructure(t, rb, "(4 0 b (2 0 b  (3 0 r  )) (5 0 b  (6 0 r  )))")
 
-	rb = &Rbtree{}
+	rb = &rbtree{}
 	rb.insert("6", 0)
 	rb.insert("5", 0)
 	rb.insert("4", 0)
@@ -174,7 +174,7 @@ func TestDelete_RedSibling(t *testing.T) {
 }
 
 func TestDelete_SiblingOneInnerRedChild(t *testing.T) {
-	rb := &Rbtree{}
+	rb := &rbtree{}
 
 	rb.insert("1", 0)
 	rb.insert("2", 0)
@@ -185,7 +185,7 @@ func TestDelete_SiblingOneInnerRedChild(t *testing.T) {
 	rb.delete("1")
 	verifyTreeStructure(t, rb, "(3 0 b (2 0 b  ) (4 0 b  ))")
 
-	rb = &Rbtree{}
+	rb = &rbtree{}
 	rb.insert("4", 0)
 	rb.insert("3", 0)
 	rb.insert("1", 0)
@@ -197,7 +197,7 @@ func TestDelete_SiblingOneInnerRedChild(t *testing.T) {
 }
 
 func TestDelete_Leaves(t *testing.T) {
-	rb := &Rbtree{}
+	rb := &rbtree{}
 
 	rb.insert("5", 5)
 	rb.insert("2", 2)
@@ -234,7 +234,7 @@ func TestDelete_Leaves(t *testing.T) {
 }
 
 func TestDelete_branch(t *testing.T) {
-	rb := &Rbtree{}
+	rb := &rbtree{}
 
 	rb.insert("5", 5)
 	rb.insert("2", 2)
@@ -259,7 +259,7 @@ func TestDelete_branch(t *testing.T) {
 }
 
 func TestDelete_unbalance(t *testing.T) {
-	rb := &Rbtree{}
+	rb := &rbtree{}
 
 	rb.insert("5", 5)
 	rb.insert("2", 2)
@@ -277,7 +277,7 @@ func TestDelete_unbalance(t *testing.T) {
 }
 
 func TestDelete_noop(t *testing.T) {
-	rb := &Rbtree{}
+	rb := &rbtree{}
 
 	r := rb.delete("23423")
 	if r {
@@ -300,7 +300,7 @@ func TestDelete_noop(t *testing.T) {
 }
 
 func TestFindNext(t *testing.T) {
-	rb := &Rbtree{}
+	rb := &rbtree{}
 	for i, k := range sequentualStrings(11) {
 		rb.insert(k, 10-i)
 	}
@@ -319,7 +319,7 @@ func TestFindNext(t *testing.T) {
 	testLookup(t, rb, 10, 10, "10")
 }
 func TestFindNext_Reverse(t *testing.T) {
-	rb := &Rbtree{}
+	rb := &rbtree{}
 	for i, k := range sequentualStrings(11) {
 		if i != 0 {
 			rb.insert(k, i)
@@ -344,7 +344,7 @@ func TestFindNext_Reverse(t *testing.T) {
 // These methods are only called from Base,
 // so any error means the tree is corrupt
 func TestFindNext_invalid(t *testing.T) {
-	rb := &Rbtree{}
+	rb := &rbtree{}
 	for i, k := range sequentualStrings(10) {
 		rb.insert(k, i)
 	}
@@ -365,7 +365,7 @@ func TestFindNext_invalid(t *testing.T) {
 }
 
 func TestValues(t *testing.T) {
-	rb := &Rbtree{}
+	rb := &rbtree{}
 	keys := sequentualStrings(10)
 	rand.Shuffle(len(keys), func(i, j int) {
 		keys[i], keys[j] = keys[j], keys[i]
@@ -381,7 +381,7 @@ func TestValues(t *testing.T) {
 	}
 }
 
-func testLookup(t *testing.T, rb *Rbtree, i, g int, e string) {
+func testLookup(t *testing.T, rb *rbtree, i, g int, e string) {
 	n, err := rb.findNext(i, g)
 	if err != nil {
 		t.Error(err)
@@ -412,7 +412,7 @@ func sequentualStrings(n int) []string {
 func benchmarkInserts(b *testing.B, keys []string) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		rb := &Rbtree{}
+		rb := &rbtree{}
 
 		for i, k := range keys {
 			rb.insert(k, i)
@@ -447,7 +447,7 @@ func BenchmarkInsertShuffled10000(b *testing.B) {
 
 func BenchmarkInsertDelete_FullTree(b *testing.B) {
 	n := 1000000
-	rb := &Rbtree{}
+	rb := &rbtree{}
 
 	keys := sequentualStrings(n)
 	for i, k := range keys {
@@ -473,7 +473,7 @@ func BenchmarkFindNextIn_100000(b *testing.B) {
 }
 
 func benchmarkFindNext(b *testing.B, n int) {
-	rb := &Rbtree{}
+	rb := &rbtree{}
 
 	keys := sequentualStrings(n)
 	rand.Shuffle(n, func(i, j int) {
@@ -492,7 +492,7 @@ func benchmarkFindNext(b *testing.B, n int) {
 }
 
 // Verifies all the pointers and properties make some kind of sense
-func verifyTree(t *testing.T, rb *Rbtree) {
+func verifyTree(t *testing.T, rb *rbtree) {
 	if rb.root == nil {
 		if rb.size != 0 {
 			t.Error("Tree with nil root has non-zero size")
@@ -595,7 +595,7 @@ func verifySubTree(t *testing.T, n *rbnode) int {
 	return br
 }
 
-func verifyTreeStructure(t *testing.T, rb *Rbtree, expected string) {
+func verifyTreeStructure(t *testing.T, rb *rbtree, expected string) {
 	actual := printTreeStructure(rb.root)
 	if expected != actual {
 		t.Errorf(

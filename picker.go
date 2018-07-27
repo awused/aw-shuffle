@@ -14,6 +14,7 @@ type picker struct {
 	m *sync.Mutex
 }
 
+// NewPicker returns a new thread-safe picker.
 func NewPicker() Picker {
 	return &picker{b: internal.NewBasePicker(), m: &sync.Mutex{}}
 }
@@ -59,6 +60,15 @@ func (t *picker) NextN(n int) ([]string, error) {
 func (t *picker) UniqueN(n int) ([]string, error) {
 	t.m.Lock()
 	ss, _, err := t.b.UniqueN(n)
+	t.m.Unlock()
+	return ss, err
+}
+func (t *picker) TryUniqueN(n int) ([]string, error) {
+	t.m.Lock()
+	ss, _, err := t.b.UniqueN(n)
+	if err == ErrInsufficientUnique {
+		ss, _, err = t.b.NextN(n)
+	}
 	t.m.Unlock()
 	return ss, err
 }

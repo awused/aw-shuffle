@@ -12,6 +12,10 @@ type unsafe struct {
 	b *internal.Base
 }
 
+// NewUnsafePicker returns a picker with no locking that is not thread-safe,
+// but can be used from a single thread. It may return ErrCorrupt if it
+// detects that it is in an inconsistent state, but does not attempt to
+// proactively detect parallel access.
 func NewUnsafePicker() Picker {
 	return &unsafe{b: internal.NewBasePicker()}
 }
@@ -44,6 +48,14 @@ func (t *unsafe) NextN(n int) ([]string, error) {
 }
 func (t *unsafe) UniqueN(n int) ([]string, error) {
 	ss, _, err := t.b.UniqueN(n)
+	return ss, err
+}
+func (t *unsafe) TryUniqueN(n int) ([]string, error) {
+	ss, _, err := t.b.UniqueN(n)
+	if err == ErrInsufficientUnique {
+		ss, _, err = t.b.NextN(n)
+	}
+
 	return ss, err
 }
 

@@ -123,6 +123,40 @@ func TestWritesToDB_Next(t *testing.T) {
 	if reflect.DeepEqual(oldb, newb) {
 		t.Error("UniqueN() did not change the value for b in the database")
 	}
+
+	ss, err = p.TryUniqueN(2)
+	if len(ss) != 2 || ss[0] != "a" || ss[1] != "b" {
+		t.Fail()
+	}
+	verifyNilError(t, err)
+	newa, err = db.Get([]byte("s:a"), nil)
+	verifyNilError(t, err)
+	newb, err = db.Get([]byte("s:b"), nil)
+	verifyNilError(t, err)
+
+	if reflect.DeepEqual(olda, newa) {
+		t.Error("TryUniqueN() did not change the value for a in the database")
+	}
+	if reflect.DeepEqual(oldb, newb) {
+		t.Error("TryUniqueN() did not change the value for b in the database")
+	}
+
+	ss, err = p.TryUniqueN(3)
+	if !reflect.DeepEqual(ss, []string{"a", "b", "a"}) {
+		t.Fail()
+	}
+	verifyNilError(t, err)
+	newa, err = db.Get([]byte("s:a"), nil)
+	verifyNilError(t, err)
+	newb, err = db.Get([]byte("s:b"), nil)
+	verifyNilError(t, err)
+
+	if reflect.DeepEqual(olda, newa) {
+		t.Error("TryUniqueN() did not change the value for a in the database")
+	}
+	if reflect.DeepEqual(oldb, newb) {
+		t.Error("TryUniqueN() did not change the value for b in the database")
+	}
 }
 
 func TestReadsFromDB_Add(t *testing.T) {
@@ -306,7 +340,45 @@ func TestSoftRemove(t *testing.T) {
 }
 
 func TestCleanDB(t *testing.T) {
-	// verify it does not touch minGen/bias
+	db := newMemDB(t)
+	p := newPersist(t, db)
+
+	_ = p.SetBias(6)
+	_ = p.AddAll([]string{"a", "b", "c", "d"})
+
+	ss, err := p.NextN(4)
+	verifyNilError(t, err)
+	if !reflect.DeepEqual(ss, []string{"a", "b", "c", "d"}) {
+		t.Fatalf("NextN(4) was not ab")
+	}
+	minGen := p.minGen
+
+	err = p.SoftRemoveAll([]string{"a", "c"})
+	verifyNilError(t, err)
+
+	err = p.CleanDB()
+	verifyNilError(t, err)
+
+	newp := newPersist(t, db)
+	if newp.minGen != minGen {
+		t.Errorf(
+			"Unexpected minGen on new tree, got %d expected %d", newp.minGen, minGen)
+	}
+
+	b, err := newp.b.GetBias()
+	verifyNilError(t, err)
+	if b != 6 {
+		t.Errorf("Unexpected bias on new tree, got %f expected 6", b)
+	}
+
+	err = newp.LoadDB()
+	verifyNilError(t, err)
+
+	ss, err = newp.Values()
+	verifyNilError(t, err)
+	if !reflect.DeepEqual(ss, []string{"b", "d"}) {
+		t.Fatalf("Values was not bd, got %v", ss)
+	}
 }
 
 func newPersist(t *testing.T, db *leveldb.DB) *persist {

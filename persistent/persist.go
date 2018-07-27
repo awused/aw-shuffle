@@ -15,20 +15,28 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
+// Picker extends strpick.Picker with the additional methods related to
+// persisting the state the the Picker to disk. None of these methods are
+// required. Close() must be called to safely close the database.
 type Picker interface {
 	strpick.Picker
 
-	// Removes a string from the tree without removing it from the underlying
-	// database. Use these methods when you want to continue to track
+	// SoftRemove removes a string from the Picker without removing it from the
+	// underlying database. A subsequent Add or LoadDB call will restore its
+	// current generation.
 	SoftRemove(string) error
+	// SoftRemoveAll removes strings from the Picker without removing them from
+	// the underlying database. A subsequent Add or LoadDB call will restore
+	// their current generations.
 	SoftRemoveAll([]string) error
 
-	// Loads all existing keys from the database.
-	// Calling this is not necessary in the case where the caller can supply
-	// every valid string, values will be loaded as needed in Add and AddAll.
+	// LoadDB loads all existing data from the database.
+	// Calling this is not necessary, but can be substantially more efficient
+	// than calling Add or AddAll.
 	LoadDB() error
-	// Removes any keys not _currently_ present in this Picker from the database.
-	// This includes any strings that have been removed using SoftRemove().
+	// CleanDB deletes any strings not currently present (returned by Values())
+	// in this Picker from the database. This includes any strings that have been
+	// removed using SoftRemove().
 	CleanDB() error
 }
 
@@ -53,6 +61,12 @@ type persist struct {
 	minGen int
 }
 
+// NewPicker creates a new persist.Picker backed by a database in the provided
+// directory dir, which will be created if it does not exist. Acquires a
+// lock on the database, preventing multiple processes from accessing it at
+// once.
+// Writes are all performed synchronously.
+// Close() must be called to safely close the database.
 func NewPicker(dir string) (Picker, error) {
 	// Bloom filters use constant extra space per SSTable to enhance read
 	// performance. This is beneficial when adding new strings to the tree.
@@ -123,6 +137,7 @@ func (t *persist) AddAll(ss []string) error {
 			continue
 		}
 
+		// TODO -- DB lookups here can be parallelized
 		data, err := t.db.Get(stringToByteKey(s), nil)
 		if err != nil && err != leveldb.ErrNotFound {
 			return err
@@ -254,6 +269,24 @@ func (t *persist) UniqueN(n int) ([]string, error) {
 	}
 	return ss, t.checkMinGen()
 }
+func (t *persist) TryUniqueN(n int) ([]string, error) {
+	defer t.m.Unlock()
+	t.m.Lock()
+
+	ss, g, err := t.b.UniqueN(n)
+	if err == strpick.ErrInsufficientUnique {
+		ss, g, err = t.b.NextN(n)
+	}
+	if err != nil {
+		return ss, err
+	}
+
+	err = t.batchPutGen(ss, g, nil)
+	if err != nil {
+		return ss, err
+	}
+	return ss, t.checkMinGen()
+}
 
 func (t *persist) SetBias(bi float64) error {
 	defer t.m.Unlock()
@@ -293,6 +326,8 @@ func (t *persist) Close() error {
 	return err
 }
 
+// SoftRemove removes a string from the picker without deleting it from the
+// database.
 func (t *persist) SoftRemove(s string) error {
 	defer t.m.Unlock()
 	t.m.Lock()
@@ -302,6 +337,9 @@ func (t *persist) SoftRemove(s string) error {
 	}
 	return t.checkMinGen()
 }
+
+// SoftRemoveAll removes multiple strings from the picker without deleting them
+// from the database.
 func (t *persist) SoftRemoveAll(ss []string) error {
 	defer t.m.Unlock()
 	t.m.Lock()
@@ -312,6 +350,7 @@ func (t *persist) SoftRemoveAll(ss []string) error {
 	return t.checkMinGen()
 }
 
+// LoadDB loads all strings and generations from the database.
 func (t *persist) LoadDB() error {
 	defer t.m.Unlock()
 	t.m.Lock()
@@ -321,7 +360,8 @@ func (t *persist) LoadDB() error {
 		return err
 	}
 
-	iter := t.db.NewIterator(&util.Range{Start: []byte("s:"), Limit: []byte("t:")}, nil)
+	iter := t.db.NewIterator(
+		&util.Range{Start: []byte("s:"), Limit: []byte("t")}, nil)
 
 	for iter.Next() {
 		gen64, n := binary.Varint(iter.Value())
@@ -345,7 +385,38 @@ func (t *persist) LoadDB() error {
 	return t.checkMinGen()
 }
 
+// CleanDB removes any strings not currently present in the picker from the
+// database. This includes strings removed by SoftRemove().
 func (t *persist) CleanDB() error {
+	defer t.m.Unlock()
+	t.m.Lock()
+
+	err := t.b.Closed()
+	if err != nil {
+		return err
+	}
+
+	valid, err := t.b.Values()
+	i := 0
+
+	iter := t.db.NewIterator(
+		&util.Range{Start: []byte("s:"), Limit: []byte("t")}, nil)
+	batch := new(leveldb.Batch)
+
+	for iter.Next() {
+		s := byteKeyToString(iter.Key())
+
+		for i < len(valid) && s > valid[i] {
+			i++
+		}
+		if i == len(valid) || valid[i] != s {
+			batch.Delete(iter.Key())
+		}
+	}
+
+	if batch.Len() > 0 {
+		return t.db.Write(batch, nil)
+	}
 	return nil
 }
 
@@ -370,7 +441,7 @@ func (t *persist) batchPutGen(ss []string, g int, mask []bool) error {
 	return nil
 }
 
-// Does _not_ call check minGen
+// Does _not_ call checkMinGen
 func (t *persist) loadAndPutGen(s string, g int) error {
 	loaded, err := t.b.Load(s, g)
 
@@ -412,6 +483,8 @@ func (t *persist) loadProperties() error {
 	return nil
 }
 
+// checkMinGen checks to see if the minimum generation of the live tree has
+// changed from what is stored in the database, and updates it if necessary.
 // It's necessary to call this a lot, because it's possible for minGen to
 // change on Add/AddAll if an old value was loaded from the DB
 func (t *persist) checkMinGen() error {

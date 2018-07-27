@@ -11,12 +11,12 @@ type rbnode struct {
 	left, right, parent           *rbnode
 }
 
-type Rbtree struct {
+type rbtree struct {
 	root *rbnode
 	size int
 }
 
-func (t *Rbtree) insert(k string, g int) bool {
+func (t *rbtree) insert(k string, g int) bool {
 	nd := rbnode{key: k, gen: g, minGen: g, maxGen: g, red: true}
 
 	if t.root == nil {
@@ -67,7 +67,7 @@ func (t *Rbtree) insert(k string, g int) bool {
 	return true
 }
 
-func (t *Rbtree) findNode(k string) *rbnode {
+func (t *rbtree) findNode(k string) *rbnode {
 	n := t.root
 	for n != nil {
 		if n.key == k {
@@ -81,7 +81,7 @@ func (t *Rbtree) findNode(k string) *rbnode {
 	return n
 }
 
-func (t *Rbtree) delete(k string) bool {
+func (t *rbtree) delete(k string) bool {
 	if t.root == nil {
 		return false
 	}
@@ -156,7 +156,7 @@ func (t *Rbtree) delete(k string) bool {
 
 // Finds the next item with a generation <= g after index
 // Wraps around
-func (t *Rbtree) findNext(index int, g int) (*rbnode, error) {
+func (t *rbtree) findNext(index int, g int) (*rbnode, error) {
 	if index < 0 || t.size <= index {
 		return nil, ErrCorrupt
 		//return nil, fmt.Errorf(
@@ -211,7 +211,7 @@ func (n *rbnode) findAbove(i int, g int) *rbnode {
 	return nil
 }
 
-func (t *Rbtree) fixAfterInsert(c *rbnode) {
+func (t *rbtree) fixAfterInsert(c *rbnode) {
 	p := c.parent
 	for p != nil {
 		// Parent is black, we're done
@@ -253,7 +253,7 @@ func (t *Rbtree) fixAfterInsert(c *rbnode) {
 }
 
 // This is only called when the node to be deleted is a non-root black node, and therefore has a sibling
-func (t *Rbtree) fixBeforeDelete(n *rbnode) {
+func (t *rbtree) fixBeforeDelete(n *rbnode) {
 	for n.parent != nil {
 		s := n.parent.otherChild(n) // s can't be nil
 		// If the sibling is red, we make it black and rotate so it is where the parent used to be
@@ -364,7 +364,7 @@ func (n *rbnode) recalcAncestors() {
 	}
 }
 
-func (t *Rbtree) rotateRight(p *rbnode) {
+func (t *rbtree) rotateRight(p *rbnode) {
 	// Left child becomes the new parent
 	l := p.left
 	p.left = l.right
@@ -388,7 +388,7 @@ func (t *Rbtree) rotateRight(p *rbnode) {
 	l.recalcNode()
 }
 
-func (t *Rbtree) rotateLeft(p *rbnode) {
+func (t *rbtree) rotateLeft(p *rbnode) {
 	// Right child becomes the new parent
 	r := p.right
 	p.right = r.left
@@ -412,7 +412,7 @@ func (t *Rbtree) rotateLeft(p *rbnode) {
 	r.recalcNode()
 }
 
-func (t *Rbtree) values() []string {
+func (t *rbtree) values() []string {
 	output := make([]string, 0, t.size)
 
 	out := &output
@@ -437,8 +437,8 @@ func (n *rbnode) values(out **[]string) {
 	}
 }
 
-// Mostly for debugging
-func (t *Rbtree) Pprint() string {
+// Pprint is used for debugging only
+func (t *rbtree) Pprint() string {
 	if t.root == nil {
 		return ""
 	}
@@ -497,7 +497,7 @@ type stackframe struct {
 	second bool
 }
 
-func (t *Rbtree) findAbove(index int, g int) *rbnode {
+func (t *rbtree) findAbove(index int, g int) *rbnode {
 	if t.root.minGen > g {
 		return nil
 	}

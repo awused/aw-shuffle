@@ -10,7 +10,8 @@ var (
 			"do not use Unsafe from multiple goroutines")
 	ErrOverflow = errors.New(
 		"strpick: unrecoverable integer overflow, destroy and recreate the picker")
-	ErrNegative           = errors.New("strpick: invalid negative number provided")
+	ErrNegative = errors.New(
+		"strpick: invalid negative number provided")
 	ErrNaN                = errors.New("strpick: unexpected NaN")
 	ErrInsufficientUnique = errors.New(
 		"strpick: UniqueN called with N larger than Size()")

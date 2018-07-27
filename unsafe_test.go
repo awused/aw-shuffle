@@ -39,6 +39,12 @@ func TestUnsafeFunctionality(t *testing.T) {
 	ss, err = u.UniqueN(1)
 	verifyError(t, err, nil)
 	verifyStrings(t, ss, []string{"a"})
+	ss, err = u.TryUniqueN(1)
+	verifyError(t, err, nil)
+	verifyStrings(t, ss, []string{"a"})
+	ss, err = u.TryUniqueN(3)
+	verifyError(t, err, nil)
+	verifyStrings(t, ss, []string{"a", "a", "a"})
 
 	verifyError(t, u.SetBias(123), nil)
 

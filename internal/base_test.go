@@ -83,10 +83,35 @@ func TestSingleElement(t *testing.T) {
 func TestAlwaysLeftmostOldest(t *testing.T) {
 	b := NewLeftmostOldestBasePicker()
 
-	_, err := b.LoadDB([]string{"a", "b", "c", "d", "e"}, []int{4, 2, 3, 1, 0})
-	g := 4
+	added, g, err := b.AddAll([]string{"e"})
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
+	}
+	if len(added) != 1 || !added[0] || g != 0 {
+		t.Fatalf("Unexpected output from AddAll, got %v %d", added, g)
+	}
+
+	loaded, err := b.Load("d", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !loaded {
+		t.Fatalf("Unexpected output from Load, got %v", loaded)
+	}
+
+	loads, err := b.LoadAll([]string{"c", "d", "e"}, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(loads, []bool{true, false, false}) {
+		t.Fatalf("Unexpected output from LoadAll, got %v", loads)
+	}
+
+	// The 9s should be ignored
+	_, err = b.LoadDB([]string{"a", "b", "c", "d", "e"}, []int{4, 2, 9, 9, 9})
+	g = 4
+	if err != nil {
+		t.Fatal(err)
 	}
 	verifySize(t, b, 5)
 
@@ -237,6 +262,8 @@ func TestBaseClosed(t *testing.T) {
 	verifyError(t, err, ErrClosed)
 	err = b.SetBias(100)
 	verifyError(t, err, ErrClosed)
+	_, err = b.GetBias()
+	verifyError(t, err, ErrClosed)
 	_, err = b.Size()
 	verifyError(t, err, ErrClosed)
 	_, err = b.Values()
@@ -245,7 +272,7 @@ func TestBaseClosed(t *testing.T) {
 
 func TestRandomWeightedGeneration(t *testing.T) {
 	b := Base{
-		r: newFakeRandom([]int{}, []float64{0, 1, 0.5}), t: &Rbtree{}, bias: 2}
+		r: newFakeRandom([]int{}, []float64{0, 1, 0.5}), t: &rbtree{}, bias: 2}
 
 	b.LoadDB([]string{"0", "1"}, []int{11, 111})
 	// Test that the bounds hold even in an impossible case
@@ -269,7 +296,7 @@ func TestRandomWeightedGeneration(t *testing.T) {
 	}
 
 	b = Base{
-		r: newFakeRandom([]int{}, []float64{0, 1, 0.5}), t: &Rbtree{}, bias: 1}
+		r: newFakeRandom([]int{}, []float64{0, 1, 0.5}), t: &rbtree{}, bias: 1}
 	b.LoadDB([]string{"0", "1"}, []int{11, 111})
 
 	if g := b.randomWeightedGeneration(); g != 11 {

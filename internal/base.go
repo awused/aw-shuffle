@@ -14,18 +14,18 @@ result of concurrent access, but does not try to reliably detect misuse.
 type Base struct {
 	closed bool
 	r      random
-	t      *Rbtree
+	t      *rbtree
 	bias   float64
 }
 
 func NewBasePicker() *Base {
-	return &Base{r: newDefaultRandom(), t: &Rbtree{}, bias: 2}
+	return &Base{r: newDefaultRandom(), t: &rbtree{}, bias: 2}
 }
 
 // A Base picker that always returns the leftmost, oldest element
 // For testing purposes only
 func NewLeftmostOldestBasePicker() *Base {
-	return &Base{r: newFakeRandom([]int{0}, []float64{0}), t: &Rbtree{}, bias: 2}
+	return &Base{r: newFakeRandom([]int{0}, []float64{0}), t: &rbtree{}, bias: 2}
 }
 
 func (b *Base) Add(s string) (bool, int, error) {
@@ -234,6 +234,15 @@ func (b *Base) SetBias(bi float64) error {
 
 	b.bias = bi
 	return nil
+}
+
+// Maybe this could be exposed as a method on Picker
+func (b *Base) GetBias() (float64, error) {
+	if b.closed {
+		return 0, ErrClosed
+	}
+
+	return b.bias, nil
 }
 
 func (b *Base) Size() (int, error) {

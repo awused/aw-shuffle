@@ -36,6 +36,12 @@ func TestPickerFunctionality(t *testing.T) {
 	ss, err = p.UniqueN(1)
 	verifyError(t, err, nil)
 	verifyStrings(t, ss, []string{"a"})
+	ss, err = p.TryUniqueN(1)
+	verifyError(t, err, nil)
+	verifyStrings(t, ss, []string{"a"})
+	ss, err = p.TryUniqueN(3)
+	verifyError(t, err, nil)
+	verifyStrings(t, ss, []string{"a", "a", "a"})
 
 	verifyError(t, p.SetBias(123), nil)
 
