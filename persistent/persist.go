@@ -68,8 +68,9 @@ type persist struct {
 // Writes are all performed synchronously.
 // Close() must be called to safely close the database.
 func NewPicker(dir string) (Picker, error) {
-	// Bloom filters use constant extra space per SSTable to enhance read
-	// performance. This is beneficial when adding new strings to the tree.
+	// Bloom filters use O(1) extra space per SSTable (O(log(n) overall) to
+	// enhance read performance. This is beneficial when adding new strings to a
+	// very large, and has minimal impact on smaller trees.
 	o := &opt.Options{
 		Filter: filter.NewBloomFilter(10),
 	}
