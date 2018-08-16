@@ -398,6 +398,9 @@ func (t *persist) CleanDB() error {
 	}
 
 	valid, err := t.b.Values()
+	if err != nil {
+		return err
+	}
 	i := 0
 
 	iter := t.db.NewIterator(

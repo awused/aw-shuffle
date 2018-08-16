@@ -68,6 +68,7 @@ func TestWritesToDB_Next(t *testing.T) {
 	verifyNilError(t, p.Add("a"))
 	verifyNilError(t, p.Add("b"))
 	olda, err := db.Get([]byte("s:a"), nil)
+	verifyNilError(t, err)
 	oldb, err := db.Get([]byte("s:b"), nil)
 	verifyNilError(t, err)
 
@@ -171,7 +172,7 @@ func TestReadsFromDB_Add(t *testing.T) {
 		t.Errorf("Unexpected response from NextN(), expected abc, got %v", ss)
 	}
 
-	s, err := p.Next() // Reads "a"
+	_, err := p.Next() // Reads "a"
 	verifyNilError(t, err)
 
 	p = newPersist(t, db)
