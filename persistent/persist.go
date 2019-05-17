@@ -38,6 +38,10 @@ type Picker interface {
 	// in this Picker from the database. This includes any strings that have been
 	// removed using SoftRemove().
 	CleanDB() error
+	// DumpDB loads all existing data from the database and returns it as a list
+	// of key, value pairs.
+	// Useful for debugging or to satisfy curiosity
+	DumpDB() ([]kv, error)
 }
 
 /**
@@ -59,6 +63,11 @@ type persist struct {
 	// minGen only tracks the minimum generation of the live tree
 	// Older "inactive" values in the DB don't count
 	minGen int
+}
+
+type kv struct {
+	Key   string
+	Value int
 }
 
 // NewPicker creates a new persist.Picker backed by a database in the provided
@@ -384,6 +393,48 @@ func (t *persist) LoadDB() error {
 	}
 
 	return t.checkMinGen()
+}
+
+// LoadDB loads all strings and generations from the DB and dumps them as
+// key/value pairs ordered by keys.
+// The current state of the picker does not matter
+func (t *persist) DumpDB() ([]kv, error) {
+	defer t.m.Unlock()
+	t.m.Lock()
+
+	err := t.b.Closed()
+	if err != nil {
+		return nil, err
+	}
+
+	output := []kv{}
+
+	iter := t.db.NewIterator(
+		&util.Range{Start: []byte("s:"), Limit: []byte("t")}, nil)
+
+	for iter.Next() {
+		gen64, n := binary.Varint(iter.Value())
+		var g int
+		if n > 0 {
+			g = int(gen64)
+		} else {
+			// Failed to read it, there's no possible recovery
+			// Set g to whatever minGen is now
+			g = t.minGen
+		}
+
+		output = append(output, kv{
+			Key:   byteKeyToString(iter.Key()),
+			Value: g,
+		})
+	}
+
+	err = iter.Error()
+	if err != nil {
+		return nil, err
+	}
+
+	return output, t.checkMinGen()
 }
 
 // CleanDB removes any strings not currently present in the picker from the

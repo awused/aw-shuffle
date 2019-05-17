@@ -50,6 +50,10 @@ _ = persist.CleanDB()
 
 Use `Close()` to safely close persistent pickers. Calling any methods on a closed picker is an error. Closing non-persistent pickers is optional but encouraged.
 
+## Standalone Executable
+
+The strpick directory contains a standalone executable that can be used in shell scripts to select random strings. It reads strings from stdin, one per line, and takes two arguments: a directory for a leveldb database and the number of items to be returned.
+
 # How It Works
 
 Builds an in-memory red-black interval tree and tracks the recency of each item by assigning each one a generation.
@@ -58,7 +62,7 @@ To select the next item it randomly selects a number between the maximum and min
 
 ## Performance
 
-All operations on individual strings are performed in O(log(n)) time, including selections, insertions, and deletions. 
+All operations on individual strings are performed in O(log(n)) time, including selections, insertions, and deletions.
 
 For persistent pickers all database reads and writes are performed synchronously, but batching is used where appropriate to attempt to limit the impact of operations on many strings.
 
