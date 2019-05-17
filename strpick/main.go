@@ -98,7 +98,9 @@ func run(c *cli.Context) error {
 		return err
 	}
 
-	fmt.Println(next)
+	for _, v := range next {
+		fmt.Println(v)
+	}
 
 	return nil
 }
