@@ -12,10 +12,11 @@ Returns errors if it ever detects it has entered an inconsistent state as a
 result of concurrent access, but does not try to reliably detect misuse.
 */
 type Base struct {
-	closed bool
-	r      random
-	t      *rbtree
-	bias   float64
+	closed            bool
+	r                 random
+	t                 *rbtree
+	bias              float64
+	newItemsRandomGen bool
 }
 
 func NewBasePicker() *Base {
@@ -37,19 +38,19 @@ func (b *Base) Add(s string) (bool, int, error) {
 
 	return b.t.insert(s, g), g, nil
 }
-func (b *Base) AddAll(ss []string) ([]bool, int, error) {
+func (b *Base) AddAll(ss []string) ([]bool, []int, error) {
 	if b.closed {
-		return nil, 0, ErrClosed
+		return nil, nil, ErrClosed
 	}
-
-	g := b.addGeneration()
 
 	out := make([]bool, len(ss), len(ss))
+	gs := make([]int, len(ss), len(ss))
 	for i, s := range ss {
-		out[i] = b.t.insert(s, g)
+		gs[i] = b.addGeneration()
+		out[i] = b.t.insert(s, gs[i])
 	}
 
-	return out, g, nil
+	return out, gs, nil
 }
 
 // For loading data from a database
@@ -245,6 +246,24 @@ func (b *Base) GetBias() (float64, error) {
 	return b.bias, nil
 }
 
+func (b *Base) SetRandomlyDistributeNewItems(rand bool) error {
+	if b.closed {
+		return ErrClosed
+	}
+
+	b.newItemsRandomGen = rand
+	return nil
+}
+
+// Maybe this could be exposed as a method on Picker
+func (b *Base) GetRandomlyDistributeNewItems() (bool, error) {
+	if b.closed {
+		return false, ErrClosed
+	}
+
+	return b.newItemsRandomGen, nil
+}
+
 func (b *Base) Size() (int, error) {
 	if b.closed {
 		return 0, ErrClosed
@@ -282,12 +301,17 @@ func (b *Base) MinGen() int {
 }
 
 // Newly inserted elements are considered as old as the oldest item in the tree
+// unless new
 func (b *Base) addGeneration() int {
 	if b.t.root == nil {
 		return 0
 	}
 
-	return b.t.root.minGen
+	if !b.newItemsRandomGen {
+		return b.t.root.minGen
+	}
+
+	return b.randomUnweightedGeneration()
 }
 
 func (b *Base) nextGeneration() int {
@@ -303,6 +327,24 @@ func (b *Base) randomWeightedGeneration() int {
 	span := b.t.root.maxGen - b.t.root.minGen
 	// Add one and use Floor() to ensure it can pick every possible generation
 	offset := float64(span+1) * math.Pow(b.r.Float64(), b.bias)
+	floor := int(math.Floor(offset))
+	if floor > span {
+		// Should not happen
+		floor = span
+	}
+
+	// Floor is biased towards 0
+	return b.t.root.minGen + floor
+}
+
+func (b *Base) randomUnweightedGeneration() int {
+	if b.t.size == 1 {
+		return b.t.root.gen
+	}
+
+	span := b.t.root.maxGen - b.t.root.minGen
+	// Add one and use Floor() to ensure it can pick every possible generation
+	offset := float64(span+1) * b.r.Float64()
 	floor := int(math.Floor(offset))
 	if floor > span {
 		// Should not happen

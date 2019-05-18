@@ -31,6 +31,7 @@ func (t *rbtree) insert(k string, g int) bool {
 	var p *rbnode
 	for c != nil {
 		if c.key == nd.key {
+			// Tree already contains this node, do not overwrite
 			return false
 		}
 

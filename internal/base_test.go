@@ -83,12 +83,12 @@ func TestSingleElement(t *testing.T) {
 func TestAlwaysLeftmostOldest(t *testing.T) {
 	b := NewLeftmostOldestBasePicker()
 
-	added, g, err := b.AddAll([]string{"e"})
+	added, gs, err := b.AddAll([]string{"e"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(added) != 1 || !added[0] || g != 0 {
-		t.Fatalf("Unexpected output from AddAll, got %v %d", added, g)
+	if len(added) != 1 || !added[0] || gs[0] != 0 {
+		t.Fatalf("Unexpected output from AddAll, got %v %d", added, gs[0])
 	}
 
 	loaded, err := b.Load("d", 1)
@@ -109,7 +109,7 @@ func TestAlwaysLeftmostOldest(t *testing.T) {
 
 	// The 9s should be ignored
 	_, err = b.LoadDB([]string{"a", "b", "c", "d", "e"}, []int{4, 2, 9, 9, 9})
-	g = 4
+	g := 4
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,6 +194,7 @@ func TestAlwaysLeftmostOldest(t *testing.T) {
 
 	verifySize(t, b, 0)
 }
+
 func TestOverflow(t *testing.T) {
 	b := NewBasePicker()
 	b.LoadDB([]string{"a", "b"}, []int{0, int(^uint(0)>>1) - 1})
@@ -343,6 +344,36 @@ func TestRandomWeightedGeneration(t *testing.T) {
 	}
 	if g := b.randomWeightedGeneration(); g != 11 {
 		t.Errorf("Unexpected generation produced, got %d expected %d", g, 11)
+	}
+}
+
+func TestRandomlyDistributeNewItems(t *testing.T) {
+	b := Base{
+		r: newFakeRandom([]int{}, []float64{0, 1, 0.5}), t: &rbtree{}, bias: 2}
+
+	b.LoadDB([]string{"0", "1"}, []int{11, 111})
+
+	b.SetRandomlyDistributeNewItems(true)
+
+	if a, g, _ := b.Add("2"); !a || g != 11 {
+		t.Errorf("Unexpected generation produced, got %d expected %d", g, 11)
+	}
+	if a, g, _ := b.Add("3"); !a || g != 111 {
+		t.Errorf("Unexpected generation produced, got %d expected %d", g, 111)
+	}
+	if a, g, _ := b.Add("4"); !a || g != 61 {
+		t.Errorf("Unexpected generation produced, got %d expected %d", g, 61)
+	}
+
+	as, gs, _ := b.AddAll([]string{"5", "6", "7", "1"})
+	if !as[0] || !as[1] || !as[2] || as[3] {
+		t.Errorf("Failed to add all expected items")
+	}
+
+	// gs[3] is meaningless since as[3] was false
+	if gs[0] != 11 || gs[1] != 111 || gs[2] != 61 {
+		t.Errorf("Unexpected generations, got %v expected %v",
+			gs[:3], []int{11, 111, 61})
 	}
 }
 
