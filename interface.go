@@ -60,6 +60,11 @@ type Picker interface {
 	// selecting the least-recently selected strings. The default bias is 2.
 	SetBias(float64) error
 
+	// SetRandomlyDistributeNewStrings changes the behaviour of newly added
+	// strings from being always considered as if they have not ever been picked
+	// to giving them a random generation so they're less likely to be picked.
+	SetRandomlyDistributeNewStrings(rand bool) error
+
 	// Size returns the number of strings currently present in the picker.
 	Size() (int, error)
 	// Values returns all strings in the picker in lexicographical order.

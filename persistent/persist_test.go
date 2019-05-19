@@ -172,14 +172,14 @@ func TestReadsFromDB_Add(t *testing.T) {
 		t.Errorf("Unexpected response from NextN(), expected abc, got %v", ss)
 	}
 
-	_, err := p.Next() // Reads "a"
+	_, err = p.Next() // Reads "a"
 	verifyNilError(t, err)
 
 	p = newPersist(t, db)
 
 	verifyNilError(t, p.Add("a"))
 	verifyNilError(t, p.Add("b"))
-	s, err = p.Next() // Reads "b" because "a" has been more recently selected
+	s, err := p.Next() // Reads "b" because "a" has been more recently selected
 	verifyNilError(t, err)
 	if s != "b" {
 		t.Fatalf("Next() was not b")
@@ -205,7 +205,7 @@ func TestReadsFromDB_Add(t *testing.T) {
 	ss, err = p.NextN(4)
 	verifyNilError(t, err)
 	// If minGen weren't loaded, efg would have a lower generation than d and
-	// this would be "efgh"
+	// this would be "efgd"
 	if !reflect.DeepEqual(ss, []string{"d", "e", "f", "g"}) {
 		t.Errorf("Unexpected response from NextN(), expected defg, got %v", ss)
 	}
@@ -258,6 +258,29 @@ func TestStoresAndLoadsBias(t *testing.T) {
 	verifyNilError(t, err)
 	if s != "a" {
 		t.Fatalf("Next() was not a")
+	}
+}
+
+func TestStoresAndLoadsRandomDistribution(t *testing.T) {
+	db := newMemDB(t)
+	p := newPersist(t, db)
+
+	verifyNilError(t, p.AddAll([]string{"a", "b"}))
+
+	verifyNilError(t, p.SetRandomlyDistributeNewStrings(true))
+
+	p = newPersist(t, db)
+	nr, _ := p.b.GetRandomlyDistributeNewItems()
+	if !nr {
+		t.Fatalf("New items not randomly distributed after construction")
+	}
+
+	verifyNilError(t, p.SetRandomlyDistributeNewStrings(false))
+
+	p = newPersist(t, db)
+	nr, _ = p.b.GetRandomlyDistributeNewItems()
+	if nr {
+		t.Fatalf("New items randomly distributed after construction")
 	}
 }
 
@@ -370,6 +393,13 @@ func TestCleanDB(t *testing.T) {
 	verifyNilError(t, err)
 	if b != 6 {
 		t.Errorf("Unexpected bias on new tree, got %f expected 6", b)
+	}
+
+	nr, err := newp.b.GetRandomlyDistributeNewItems()
+	verifyNilError(t, err)
+	if nr {
+		t.Errorf("Unexpected random distribution setting on new tree, "+
+			"got %v expected false", nr)
 	}
 
 	err = newp.LoadDB()

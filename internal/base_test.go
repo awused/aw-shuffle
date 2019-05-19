@@ -273,7 +273,7 @@ func TestBaseClosed(t *testing.T) {
 
 func TestRandomWeightedGeneration(t *testing.T) {
 	b := Base{
-		r: newFakeRandom([]int{}, []float64{0, 1, 0.5}), t: &rbtree{}, bias: 2}
+		r: newFakeRandom([]int{}, []float64{0, 1, 0.5}), t: &rbtree{hasher: &fakeHasher{}}, bias: 2}
 
 	b.LoadDB([]string{"0", "1"}, []int{11, 111})
 	// Test that the bounds hold even in an impossible case
@@ -297,7 +297,7 @@ func TestRandomWeightedGeneration(t *testing.T) {
 	}
 
 	b = Base{
-		r: newFakeRandom([]int{}, []float64{0, 1, 0.5}), t: &rbtree{}, bias: 1}
+		r: newFakeRandom([]int{}, []float64{0, 1, 0.5}), t: &rbtree{hasher: &fakeHasher{}}, bias: 1}
 	b.LoadDB([]string{"0", "1"}, []int{11, 111})
 
 	if g := b.randomWeightedGeneration(); g != 11 {
@@ -349,7 +349,7 @@ func TestRandomWeightedGeneration(t *testing.T) {
 
 func TestRandomlyDistributeNewItems(t *testing.T) {
 	b := Base{
-		r: newFakeRandom([]int{}, []float64{0, 1, 0.5}), t: &rbtree{}, bias: 2}
+		r: newFakeRandom([]int{}, []float64{0, 1, 0.5}), t: &rbtree{hasher: &fakeHasher{}}, bias: 2}
 
 	b.LoadDB([]string{"0", "1"}, []int{11, 111})
 

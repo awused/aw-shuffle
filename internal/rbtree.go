@@ -6,21 +6,44 @@ import (
 
 type rbnode struct {
 	key                           string
+	hash                          uint64
 	red                           bool
 	gen, children, minGen, maxGen int
 	left, right, parent           *rbnode
 }
 
 type rbtree struct {
-	root *rbnode
-	size int
+	root   *rbnode
+	size   int
+	hasher hasher
+}
+
+func compare(a *rbnode, bkey string, bhash uint64) int {
+	if a.hash < bhash {
+		return -1
+	} else if a.hash > bhash {
+		return 1
+	}
+
+	if a.key < bkey {
+		return -1
+	} else if a.key > bkey {
+		return 1
+	}
+
+	return 0
 }
 
 func (t *rbtree) insert(k string, g int) bool {
-	nd := rbnode{key: k, gen: g, minGen: g, maxGen: g, red: true}
+	h := t.hasher.hash(k)
+	return t.reinsert(k, h, g)
+}
+
+func (t *rbtree) reinsert(k string, h uint64, g int) bool {
+	nd := &rbnode{key: k, hash: h, gen: g, minGen: g, maxGen: g, red: true}
 
 	if t.root == nil {
-		t.root = &nd
+		t.root = nd
 		nd.red = false
 		t.size++
 		return true
@@ -30,13 +53,14 @@ func (t *rbtree) insert(k string, g int) bool {
 	c := t.root
 	var p *rbnode
 	for c != nil {
-		if c.key == nd.key {
+		cmp := compare(nd, c.key, c.hash)
+		if cmp == 0 {
 			// Tree already contains this node, do not overwrite
 			return false
 		}
-
 		p = c
-		if nd.key < c.key {
+
+		if cmp < 0 {
 			c = c.left
 		} else {
 			c = c.right
@@ -45,10 +69,10 @@ func (t *rbtree) insert(k string, g int) bool {
 
 	t.size++
 	nd.parent = p
-	if nd.key < p.key {
-		p.left = &nd
+	if compare(nd, p.key, p.hash) < 0 {
+		p.left = nd
 	} else {
-		p.right = &nd
+		p.right = nd
 	}
 
 	// Fix generations and children counters for all ancestors
@@ -64,16 +88,19 @@ func (t *rbtree) insert(k string, g int) bool {
 	}
 
 	// Now restore rb tree properties
-	t.fixAfterInsert(&nd)
+	t.fixAfterInsert(nd)
 	return true
 }
 
 func (t *rbtree) findNode(k string) *rbnode {
+	h := t.hasher.hash(k)
+
 	n := t.root
 	for n != nil {
-		if n.key == k {
+		cmp := compare(n, k, h)
+		if cmp == 0 {
 			break
-		} else if k < n.key {
+		} else if cmp > 0 {
 			n = n.left
 		} else {
 			n = n.right
@@ -100,9 +127,10 @@ func (t *rbtree) delete(k string) bool {
 		for s.left != nil {
 			s = s.left
 		}
-		// Only key and gen need to be copied,
+		// Only key, hash, and gen need to be copied,
 		// the rest will be recalculated in the next step
 		n.key, s.key = s.key, n.key
+		n.hash, s.hash = s.hash, n.hash
 		n.gen, s.gen = s.gen, n.gen
 
 		n = s

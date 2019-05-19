@@ -63,6 +63,11 @@ func (t *unsafe) SetBias(bi float64) error {
 	return t.b.SetBias(bi)
 }
 
+func (t *unsafe) SetRandomlyDistributeNewStrings(rand bool) error {
+	err := t.b.SetRandomlyDistributeNewItems(rand)
+	return err
+}
+
 func (t *unsafe) Size() (int, error) {
 	return t.b.Size()
 }

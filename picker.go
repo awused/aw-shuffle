@@ -80,6 +80,13 @@ func (t *picker) SetBias(bi float64) error {
 	return err
 }
 
+func (t *picker) SetRandomlyDistributeNewStrings(rand bool) error {
+	t.m.Lock()
+	err := t.b.SetRandomlyDistributeNewItems(rand)
+	t.m.Unlock()
+	return err
+}
+
 func (t *picker) Size() (int, error) {
 	t.m.Lock()
 	sz, err := t.b.Size()

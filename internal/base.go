@@ -3,6 +3,7 @@ package internal
 import (
 	"errors"
 	"math"
+	"sort"
 )
 
 /**
@@ -20,13 +21,13 @@ type Base struct {
 }
 
 func NewBasePicker() *Base {
-	return &Base{r: newDefaultRandom(), t: &rbtree{}, bias: 2}
+	return &Base{r: newDefaultRandom(), t: &rbtree{hasher: newDefaultHasher()}, bias: 2}
 }
 
 // A Base picker that always returns the leftmost, oldest element
 // For testing purposes only
 func NewLeftmostOldestBasePicker() *Base {
-	return &Base{r: newFakeRandom([]int{0}, []float64{0}), t: &rbtree{}, bias: 2}
+	return &Base{r: newFakeRandom([]int{0}, []float64{0}), t: &rbtree{hasher: newFakeHasher()}, bias: 2}
 }
 
 func (b *Base) Add(s string) (bool, int, error) {
@@ -194,6 +195,7 @@ func (b *Base) UniqueN(n int) ([]string, int, error) {
 	}
 
 	out := make([]string, n, n)
+	hashes := make([]uint64, n, n)
 	for i := range out {
 		rbn, err := b.findNext()
 		if err != nil {
@@ -202,10 +204,11 @@ func (b *Base) UniqueN(n int) ([]string, int, error) {
 			return nil, 0, err
 		}
 		out[i] = rbn.key
+		hashes[i] = rbn.hash
 		b.t.delete(out[i])
 	}
-	for _, s := range out {
-		b.t.insert(s, g)
+	for i, s := range out {
+		b.t.reinsert(s, hashes[i], g)
 	}
 
 	return out, g, nil
@@ -276,7 +279,11 @@ func (b *Base) Values() ([]string, error) {
 	if b.closed {
 		return nil, ErrClosed
 	}
-	return b.t.values(), nil
+	values := b.t.values()
+	sort.Slice(values, func(i int, j int) bool {
+		return values[i] < values[j]
+	})
+	return values, nil
 }
 
 func (b *Base) Close() error {

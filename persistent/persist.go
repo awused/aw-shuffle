@@ -126,7 +126,7 @@ func (t *persist) Add(s string) error {
 
 	// If binary.Varint failed err will be nil
 	if err == nil || err == leveldb.ErrNotFound {
-		return t.loadAndPutGen(s, t.minGen)
+		return t.addAndPutGen(s)
 	}
 
 	return err
@@ -177,18 +177,10 @@ func (t *persist) AddAll(ss []string) error {
 	}
 
 	for _, s := range dbMiss {
-		err = t.loadAndPutGen(s, t.minGen)
+		err = t.addAndPutGen(s)
 		if err != nil {
 			return err
 		}
-	}
-
-	if len(dbMiss) > 0 {
-		loaded, err := t.b.LoadAll(ss, t.minGen)
-		if err != nil {
-			return err
-		}
-		return t.batchPutGen(dbMiss, t.minGen, loaded)
 	}
 
 	return nil
@@ -309,6 +301,17 @@ func (t *persist) SetBias(bi float64) error {
 	return t.saveBias(bi)
 }
 
+func (t *persist) SetRandomlyDistributeNewStrings(nr bool) error {
+	defer t.m.Unlock()
+	t.m.Lock()
+
+	if err := t.b.SetRandomlyDistributeNewItems(nr); err != nil {
+		return err
+	}
+
+	return t.saveNewRandom(nr)
+}
+
 func (t *persist) Size() (int, error) {
 	t.m.Lock()
 	sz, err := t.b.Size()
@@ -381,6 +384,7 @@ func (t *persist) LoadDB() error {
 		} else {
 			// Failed to read it, there's no possible recovery
 			// Set g to whatever minGen is now
+			// This is not influenced by the randomly distribute new strings setting
 			g = t.minGen
 		}
 
@@ -497,8 +501,21 @@ func (t *persist) batchPutGen(ss []string, g int, mask []bool) error {
 }
 
 // Does _not_ call checkMinGen
-func (t *persist) loadAndPutGen(s string, g int) error {
-	loaded, err := t.b.Load(s, g)
+func (t *persist) addAndPutGen(s string) error {
+	sz, err := t.b.Size()
+	if err != nil {
+		return err
+	}
+
+	// If there's nothing, start from the minimum generation from the DB to avoid
+	// a new item being too overwhelmingly likely
+	g := t.minGen
+	loaded := false
+	if sz == 0 {
+		loaded, err = t.b.Load(s, g)
+	} else {
+		loaded, g, err = t.b.Add(s)
+	}
 
 	if err == nil && loaded {
 		err = t.dbPutInt(stringToByteKey(s), g)
@@ -509,6 +526,7 @@ func (t *persist) loadAndPutGen(s string, g int) error {
 
 var minGenProp = []byte("p:mingen")
 var biasProp = []byte("p:bias")
+var newRandomProp = []byte("p:newrandom")
 
 func (t *persist) loadProperties() error {
 	data, err := t.db.Get(minGenProp, nil)
@@ -527,6 +545,19 @@ func (t *persist) loadProperties() error {
 		bias := math.Float64frombits(bits)
 
 		err = t.b.SetBias(bias)
+
+		if err != nil {
+			return err
+		}
+	} else if err != leveldb.ErrNotFound {
+		return err
+	}
+
+	data, err = t.db.Get(newRandomProp, nil)
+	if err == nil {
+		nr := data[0] != 0
+
+		err = t.b.SetRandomlyDistributeNewItems(nr)
 
 		if err != nil {
 			return err
@@ -556,6 +587,14 @@ func (t *persist) saveBias(bi float64) error {
 	buf := make([]byte, 8)
 	binary.LittleEndian.PutUint64(buf, bits)
 	return t.db.Put(biasProp, buf, nil)
+}
+
+func (t *persist) saveNewRandom(nr bool) error {
+	buf := make([]byte, 1)
+	if nr {
+		buf[0] = 1
+	}
+	return t.db.Put(newRandomProp, buf, nil)
 }
 
 const keyPrefix = "s:"
