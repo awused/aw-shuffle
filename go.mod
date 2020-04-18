@@ -2,7 +2,7 @@ module github.com/awused/go-strpick
 
 go 1.12
 
-replace gopkg.in/fsnotify.v1 => github.com/fsnotify/fsnotify v1.4.9
+replace gopkg.in/fsnotify.v1 => github.com/kolaente/fsnotify v1.4.10-0.20200411160148-1bc3c8ff4048
 
 require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.0 // indirect
