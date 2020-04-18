@@ -9,20 +9,20 @@ import (
 
 	"github.com/awused/go-strpick/persistent"
 	"github.com/mattn/go-runewidth"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v2"
 )
 
 func main() {
 	app := cli.NewApp()
 	app.Usage = "Selects random strings from stdin"
 	app.Flags = []cli.Flag{
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name:  "db",
 			Usage: "Store persistent data in `DIR`",
 		},
 	}
 
-	app.Commands = []cli.Command{
+	app.Commands = []*cli.Command{
 		{
 			Name:   "clean",
 			Usage:  "Read values from stdin and remove values that aren't present from the DB",
@@ -79,7 +79,7 @@ func dump(c *cli.Context) error {
 }
 
 func run(c *cli.Context) error {
-	if len(c.Args()) < 1 {
+	if c.NArg() < 1 {
 		log.Fatal("Specify number of strings to pick")
 	}
 
@@ -106,11 +106,11 @@ func run(c *cli.Context) error {
 }
 
 func newPicker(c *cli.Context) persistent.Picker {
-	if c.GlobalString("db") == "" {
+	if c.String("db") == "" {
 		log.Fatal("DB is required")
 	}
 
-	p, err := persistent.NewPicker(c.GlobalString("db"))
+	p, err := persistent.NewPicker(c.String("db"))
 	if err != nil {
 		log.Panic(err)
 	}
