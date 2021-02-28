@@ -322,7 +322,46 @@ func TestLoadDB(t *testing.T) {
 	if s != "b" {
 		t.Fatalf("Next() was not b")
 	}
+}
 
+func TestLoadDB_trailingPrefix(t *testing.T) {
+	db := newMemDB(t)
+	p := newPersist(t, db)
+
+	verifyNilError(t, p.LoadDB())
+	sz, err := p.Size()
+	verifyNilError(t, err)
+	if sz != 0 {
+		t.Fatalf("Unexpected Size() %d", sz)
+	}
+
+	_ = p.AddAll([]string{"as:", "b:s", "cs"})
+
+	s, err := p.Next()
+	verifyNilError(t, err)
+	if s != "as:" {
+		t.Fatalf("Next() was not as:")
+	}
+
+	p = newPersist(t, db)
+	ss, err := p.Values()
+	verifyNilError(t, err)
+	if len(ss) != 0 {
+		t.Fatal("Expected empty Values()")
+	}
+
+	verifyNilError(t, p.LoadDB())
+	ss, err = p.Values()
+	verifyNilError(t, err)
+	if !reflect.DeepEqual(ss, []string{"as:", "b:s", "cs"}) {
+		t.Fatalf("Got unexpected values back, expected as: b:s cs got %v", ss)
+	}
+
+	s, err = p.Next()
+	verifyNilError(t, err)
+	if s != "b:s" {
+		t.Fatalf("Next() was not b:s")
+	}
 }
 
 func TestSoftRemove(t *testing.T) {

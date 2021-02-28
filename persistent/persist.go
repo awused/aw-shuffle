@@ -604,7 +604,7 @@ func stringToByteKey(s string) []byte {
 }
 
 func byteKeyToString(b []byte) string {
-	return strings.Trim(string(b), keyPrefix)
+	return strings.TrimPrefix(string(b), keyPrefix)
 }
 
 func (t *persist) dbPutInt(key []byte, g int) error {
