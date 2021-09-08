@@ -473,6 +473,21 @@ func BenchmarkInsertSimilarLongStrings10000(b *testing.B) {
 	benchmarkInserts(b, keys)
 }
 
+const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+func BenchmarkInsertRandomLongStrings10000(b *testing.B) {
+	var keys []string
+	for i := 0; i < 10000; i++ {
+		key := []byte{}
+		for j := 0; j < 50; j++ {
+			key = append(key, letters[rand.Intn(len(letters))])
+		}
+		keys = append(keys, string(key))
+	}
+
+	benchmarkInserts(b, keys)
+}
+
 func BenchmarkInsertDelete_FullTree(b *testing.B) {
 	n := 1000000
 	rb := &rbtree{hasher: newDefaultHasher()}

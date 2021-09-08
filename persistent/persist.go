@@ -34,6 +34,11 @@ type Picker interface {
 	// Calling this is not necessary, but can be substantially more efficient
 	// than calling Add or AddAll.
 	LoadDB() error
+
+	// Initialize is equivalent to AddAll but is more efficient when dealing with
+	// the majority of the contents of the DB.
+	Initialize([]string) error
+
 	// CleanDB deletes any strings not currently present (returned by Values())
 	// in this Picker from the database. This includes any strings that have been
 	// removed using SoftRemove().
@@ -399,7 +404,65 @@ func (t *persist) LoadDB() error {
 	return t.checkMinGen()
 }
 
-// LoadDB loads all strings and generations from the DB and dumps them as
+// Initialize loads all strings and generations from the database for the given strings.
+// It's equivalent to AddAll but faster for very large numbers of strings.
+func (t *persist) Initialize(ss []string) error {
+	defer t.m.Unlock()
+	t.m.Lock()
+
+	err := t.b.Closed()
+	if err != nil {
+		return err
+	}
+
+	keys := make(map[string]bool)
+	for _, s := range ss {
+		if t.b.Contains(s) {
+			continue
+		}
+		keys[s] = true
+	}
+
+	iter := t.db.NewIterator(
+		&util.Range{Start: []byte("s:"), Limit: []byte("t")}, nil)
+
+	for iter.Next() {
+		key := byteKeyToString(iter.Key())
+		if !keys[key] {
+			continue
+		}
+		delete(keys, key)
+
+		gen64, n := binary.Varint(iter.Value())
+		var g int
+		if n > 0 {
+			g = int(gen64)
+		} else {
+			// Failed to read it, there's no possible recovery
+			// Set g to whatever minGen is now
+			// This is not influenced by the randomly distribute new strings setting
+			g = t.minGen
+		}
+
+		t.b.Load(key, g)
+	}
+
+	err = iter.Error()
+	if err != nil {
+		return err
+	}
+
+	for s := range keys {
+		err = t.addAndPutGen(s)
+		if err != nil {
+			return err
+		}
+	}
+
+	return t.checkMinGen()
+}
+
+// DumpDB loads all strings and generations from the DB and dumps them as
 // key/value pairs ordered by keys.
 // The current state of the picker does not matter
 func (t *persist) DumpDB() ([]kv, error) {

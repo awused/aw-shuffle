@@ -1,8 +1,10 @@
 package internal
 
 import (
-	"hash/fnv"
 	"time"
+
+	"github.com/segmentio/fasthash/fnv1a"
+	"github.com/twmb/murmur3"
 )
 
 /*
@@ -18,20 +20,21 @@ type hasher interface {
 
 func newDefaultHasher() hasher {
 	return &defaultHasher{
-		salt: []byte(time.Now().String()),
+		salted: fnv1a.AddBytes64(fnv1a.Init64, []byte(time.Now().String())),
 	}
 }
 
 type defaultHasher struct {
 	// Salt is only used to randomize order each time the tree is built
-	salt []byte
+	salted uint64
 }
 
 func (dh *defaultHasher) hash(s string) uint64 {
-	h := fnv.New64a()
-	h.Write(dh.salt)
-	h.Write([]byte(s))
-	return h.Sum64()
+	// fnv1a has a significant advantage on tiny strings, but quickly falls behind.
+	if len(s) < 10 {
+		return fnv1a.AddString64(dh.salted, s)
+	}
+	return murmur3.SeedStringSum64(dh.salted, s)
 }
 
 type fakeHasher struct {

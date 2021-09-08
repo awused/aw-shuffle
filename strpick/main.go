@@ -119,10 +119,13 @@ func newPicker(c *cli.Context) persistent.Picker {
 
 func readStdin(p persistent.Picker) {
 	s := bufio.NewScanner(os.Stdin)
+	keys := []string{}
 	for s.Scan() {
-		err := p.Add(s.Text())
-		if err != nil {
-			log.Fatal(err)
-		}
+		keys = append(keys, s.Text())
+	}
+
+	err := p.Initialize(keys)
+	if err != nil {
+		log.Fatal(err)
 	}
 }

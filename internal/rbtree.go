@@ -93,6 +93,11 @@ func (t *rbtree) reinsert(k string, h uint64, g int) bool {
 }
 
 func (t *rbtree) findNode(k string) *rbnode {
+	if t.root == nil {
+		// Avoid hashing if we know for a fact we won't need it.
+		return nil
+	}
+
 	h := t.hasher.hash(k)
 
 	n := t.root
