@@ -1,7 +1,7 @@
 [package]
 name = "strpick"
 version = "0.1.0"
-edition = "2018"
+edition = "2021"
 description = "Simple binary interface for shuffling strings using aw-shuffle and persisting state to a database."
 readme = "../README.md"
 license = "MIT"
