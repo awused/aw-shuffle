@@ -320,7 +320,7 @@ func (t *rbtree) fixBeforeDelete(n *rbnode) {
 		}
 
 		if !s.red {
-			// All three nodes are black but S has one right child on the inside
+			// All three nodes are black but S has one red child on the inside
 			// We can make S red and rotate so the inner child is the new S, followed by a rotation one level up in the opposite direction
 			if n == n.parent.left && (s.right == nil || !s.right.red) && (s.left != nil && s.left.red) {
 				s.red = true

@@ -1,0 +1,32 @@
+[package]
+name = "aw-shuffle"
+version = "0.1.0"
+edition = "2018"
+description = "Library for randomly selecting items, favouring less recently selected items."
+readme = "../README.md"
+license = "MIT"
+keywords = ["shuffle"]
+homepage = "https://github.com/awused/go-strpick"
+repository = "https://github.com/awused/go-strpick"
+
+[features]
+persistent = ["serde", "rmp-serde"]
+rocks = ["persistent", "rocksdb"]
+
+[dependencies]
+ahash = "0.7.4"
+rand = "0.8.4"
+rmp-serde = { version = "0.15.5", optional = true }
+rocksdb = { version = "0.17.0", default-features = false, features = ["lz4"], optional = true }
+serde = { version = "1.0.130", default-features = false, optional = true }
+
+[dev-dependencies]
+criterion = "0.3"
+
+[[bench]]
+name = "benchmarks"
+harness = false
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

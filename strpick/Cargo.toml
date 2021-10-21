@@ -1,0 +1,19 @@
+[package]
+name = "strpick"
+version = "0.1.0"
+edition = "2018"
+description = "Simple binary interface for shuffling strings using aw-shuffle and persisting state to a database."
+readme = "../README.md"
+license = "MIT"
+keywords = ["shuffle"]
+homepage = "https://github.com/awused/go-strpick"
+repository = "https://github.com/awused/go-strpick"
+
+
+[dependencies]
+aw-shuffle = { path = "../aw-shuffle", features = [ "rocks" ] }
+rmpv = { version = "1.0.0" }
+rocksdb = { version = "0.17.0", default-features = false, features = ["lz4"] }
+structopt = "0.3"
+tempfile = "3.2.0"
+

@@ -430,31 +430,89 @@ func sequentualStrings(n int) []string {
 func benchmarkInserts(b *testing.B, keys []string) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		shuffled := make([]string, len(keys))
+		copy(shuffled, keys)
+		rand.Shuffle(len(shuffled), func(i, j int) {
+			shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+		})
+		b.StartTimer()
 		rb := &rbtree{hasher: newDefaultHasher()}
 
-		for i, k := range keys {
+		for i, k := range shuffled {
 			rb.insert(k, i)
+		}
+	}
+}
+func benchmarkInsertDeletes(b *testing.B, keys []string) {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		shuffled := make([]string, len(keys))
+		copy(shuffled, keys)
+		rand.Shuffle(len(shuffled), func(i, j int) {
+			shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+		})
+
+		deletes := make([]string, len(keys))
+		copy(deletes, keys)
+		rand.Shuffle(len(deletes), func(i, j int) {
+			deletes[i], deletes[j] = deletes[j], deletes[i]
+		})
+
+		b.StartTimer()
+		rb := &rbtree{hasher: newDefaultHasher()}
+
+		for i, k := range shuffled {
+			rb.insert(k, i)
+		}
+		for _, k := range deletes {
+			rb.delete(k)
 		}
 	}
 }
 
 // Sequential inserts
-func BenchmarkInsert1(b *testing.B) {
-	benchmarkInserts(b, sequentualStrings(1))
-}
-func BenchmarkInsert10(b *testing.B) {
-	benchmarkInserts(b, sequentualStrings(10))
-}
-func BenchmarkInsert100(b *testing.B) {
-	benchmarkInserts(b, sequentualStrings(100))
-}
-func BenchmarkInsert10000(b *testing.B) {
-	benchmarkInserts(b, sequentualStrings(10000))
-}
-func BenchmarkInsert1000000(b *testing.B) {
-	benchmarkInserts(b, sequentualStrings(1000000))
-}
-
+// func BenchmarkInsert1(b *testing.B) {
+// 	benchmarkInserts(b, sequentualStrings(1))
+// }
+// func BenchmarkInsert10(b *testing.B) {
+// 	benchmarkInserts(b, sequentualStrings(10))
+// }
+// func BenchmarkInsert100(b *testing.B) {
+// 	benchmarkInserts(b, sequentualStrings(100))
+// }
+// func BenchmarkInsert10000(b *testing.B) {
+// 	benchmarkInserts(b, sequentualStrings(10000))
+// }
+// func BenchmarkInsert50000(b *testing.B) {
+// 	benchmarkInserts(b, sequentualStrings(50000))
+// }
+// func BenchmarkInsert100000(b *testing.B) {
+// 	benchmarkInserts(b, sequentualStrings(100000))
+// }
+// func BenchmarkInsert500000(b *testing.B) {
+// 	benchmarkInserts(b, sequentualStrings(500000))
+// }
+// func BenchmarkInsert1000000(b *testing.B) {
+// 	benchmarkInserts(b, sequentualStrings(1000000))
+// }
+//
+// func BenchmarkInsertDeletes10(b *testing.B) {
+// 	benchmarkInsertDeletes(b, sequentualStrings(10))
+// }
+// func BenchmarkInsertDeletes100(b *testing.B) {
+// 	benchmarkInsertDeletes(b, sequentualStrings(100))
+// }
+// func BenchmarkInsertDeletes1000(b *testing.B) {
+// 	benchmarkInsertDeletes(b, sequentualStrings(1000))
+// }
+// func BenchmarkInsertDeletes100000(b *testing.B) {
+// 	benchmarkInsertDeletes(b, sequentualStrings(100000))
+// }
+// func BenchmarkInsertDeletes1000000(b *testing.B) {
+// 	benchmarkInsertDeletes(b, sequentualStrings(1000000))
+// }
 func BenchmarkInsertShuffled10000(b *testing.B) {
 	keys := sequentualStrings(10000)
 	rand.Shuffle(10000, func(i, j int) {
@@ -475,9 +533,9 @@ func BenchmarkInsertSimilarLongStrings10000(b *testing.B) {
 
 const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-func BenchmarkInsertRandomLongStrings10000(b *testing.B) {
+func BenchmarkInsertRandomLongStrings100000(b *testing.B) {
 	var keys []string
-	for i := 0; i < 10000; i++ {
+	for i := 0; i < 100000; i++ {
 		key := []byte{}
 		for j := 0; j < 50; j++ {
 			key = append(key, letters[rand.Intn(len(letters))])
@@ -486,6 +544,19 @@ func BenchmarkInsertRandomLongStrings10000(b *testing.B) {
 	}
 
 	benchmarkInserts(b, keys)
+}
+
+func BenchmarkInsertDeleteRandomLongStrings1000000(b *testing.B) {
+	var keys []string
+	for i := 0; i < 1000000; i++ {
+		key := []byte{}
+		for j := 0; j < 50; j++ {
+			key = append(key, letters[rand.Intn(len(letters))])
+		}
+		keys = append(keys, string(key))
+	}
+
+	benchmarkInsertDeletes(b, keys)
 }
 
 func BenchmarkInsertDelete_FullTree(b *testing.B) {
@@ -505,14 +576,32 @@ func BenchmarkInsertDelete_FullTree(b *testing.B) {
 		rb.insert(keys[x], x)
 	}
 }
-func BenchmarkFindNextIn_5(b *testing.B) {
-	benchmarkFindNext(b, 5)
+func BenchmarkFindNextIn_1(b *testing.B) {
+	benchmarkFindNext(b, 1)
+}
+func BenchmarkFindNextIn_10(b *testing.B) {
+	benchmarkFindNext(b, 10)
+}
+func BenchmarkFindNextIn_100(b *testing.B) {
+	benchmarkFindNext(b, 100)
 }
 func BenchmarkFindNextIn_1000(b *testing.B) {
 	benchmarkFindNext(b, 1000)
 }
+func BenchmarkFindNextIn_10000(b *testing.B) {
+	benchmarkFindNext(b, 10000)
+}
+func BenchmarkFindNextIn_50000(b *testing.B) {
+	benchmarkFindNext(b, 50000)
+}
 func BenchmarkFindNextIn_100000(b *testing.B) {
 	benchmarkFindNext(b, 100000)
+}
+func BenchmarkFindNextIn_500000(b *testing.B) {
+	benchmarkFindNext(b, 500000)
+}
+func BenchmarkFindNextIn_1000000(b *testing.B) {
+	benchmarkFindNext(b, 1000000)
 }
 
 func benchmarkFindNext(b *testing.B, n int) {
