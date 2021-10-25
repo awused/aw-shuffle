@@ -41,12 +41,22 @@ pub trait AwShuffler: private::Sealed {
     /// The type of errors returned by the shuffler on failure.
     type Error: Error;
 
-    /// Adds the item to the shuffler.
+    /// Adds the item to the shuffler. How the item is handled is controlled by the value of
+    /// [`NewItemHandling`] set when creating the shuffler.
     ///
     /// Returns `true` if the item was not already present.
+    ///
+    /// For [`PersistentShuffler`](persistent::PersistentShuffler)s this does not query the
+    /// database. See [`PersistentShuffler::load`](persistent::PersistentShuffler::load) for an
+    /// alternative that does read from the database.
     fn add(&mut self, item: Self::Item) -> Result<bool, Self::Error>;
 
     /// Removes the item from the shuffler, returning it if it was present.
+    ///
+    /// For [`PersistentShuffler`](persistent::PersistentShuffler)s this immediately removes the
+    /// item from the database. See
+    /// [`PersistentShuffler::soft_remove`](persistent::PersistentShuffler::soft_remove) for an
+    /// alternative that does retain the item in the database for the future.
     fn remove(&mut self, item: &Self::Item) -> Result<Option<Self::Item>, Self::Error>;
 
     /// Returns the next item from the shuffler, weighted based on recency and the configured bias.
@@ -95,12 +105,20 @@ pub trait AwShuffler: private::Sealed {
     fn size(&self) -> usize;
 
     /// Returns all of the values currently in the shuffler in no specific order.
+    ///
+    /// For [`PersistentShuffler`](persistent::PersistentShuffler)s this only counts the items
+    /// currently loaded in memory. See the documentation for persistent shufflers for more
+    /// information.
     fn values(&self) -> Vec<&Self::Item>;
 
     /// Returns all of the values currently in the shuffler and their generations in no specific
     /// order.
     ///
     /// The generation is not really meaningful on its own but is useful for satisfying curiosity.
+    ///
+    /// For [`PersistentShuffler`](persistent::PersistentShuffler)s this only counts the items
+    /// currently loaded in memory. See the documentation for persistent shufflers for more
+    /// information.
     fn dump(&self) -> Vec<(&Self::Item, u64)>;
 }
 

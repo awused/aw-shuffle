@@ -42,18 +42,55 @@ impl<I: super::Item + Serialize + DeserializeOwned> Item for I {}
 /// The [`PersistentShuffler`] should be closed to ensure all
 /// updates have been flushed to disk. If the [`PersistentShuffler`] is not closed it will be
 /// closed on drop, but any errors will be lost.
+///
+/// # Syncing with the Database
+///
+/// There are two ways to use a persistent shuffler. Either as a drop-in, durable
+/// replacement for an in-memory [`AwShuffler`] where the database reflects the same state as the
+/// in-memory shuffler 1:1, or allowing the in-mrmemory shuffler to diverge from the database.
+///
+/// To use the shuffler as a regular shuffler that only saves its state between runs, use the
+/// regular [`AwShuffler::add`] and [`AwShuffler::remove`] methods to manage items. Leave
+/// [`Options::keep_unrecognized`] set to `false` when creating a shuffler.
+///
+/// When the set of items might change over time with items being removed and reintroduced, you can
+/// make use of [`load`](Self::load) and [`soft_remove`](Self::soft_remove) in place of
+/// [`add`](AwShuffler::add) and [`remove`](AwShuffler::remove). Setting
+/// [`Options::keep_unrecognized`] to `true` and using [`soft_remove`](Self::soft_remove) will keep
+/// items in the database for the future. Using [`load`](Self::load) will attempt to load items from
+/// the database if they're present.
 pub trait PersistentShuffler: AwShuffler
 where
     Self::Item: Item,
 {
+    /// Add an item to the shuffler, preferring to read the item's data from the database when
+    /// possible. If the item is not present in the database this is equivalent to calling
+    /// [`add`](AwShuffler::add).
+    ///
+    /// This is only meaningful if the item has been removed with
+    /// [`soft_remove`](Self::soft_remove) or kept on initialization with
+    /// [`Options::keep_unrecognized`] set to `true`.
+    ///
+    /// Returns `true` if the item was not present in memory.
+    fn load(&mut self, item: Self::Item) -> Result<bool, Self::Error>;
+
+    /// Removes the item from the shuffler, returning it if it was present in memory. Does not
+    /// remove the item from the underlying database, leaving it available for future runs or
+    /// future [`load`](Self::load) calls.
+    ///
+    /// If an item has been removed with `soft_remove` then it cannot be removed from the database
+    /// using [`remove`](AwShuffler::remove) alone, it will need to be added then removed, or
+    /// cleared by a future shuffler initialized with [`Options::keep_unrecognized`] set to
+    /// `true`.
+    fn soft_remove(&mut self, item: &Self::Item) -> Result<Option<Self::Item>, Self::Error>;
+
+
     /// Flushes any pending changes to disk and runs any garbage collection or compaction routines
     /// for the underlying storage provider.
     ///
     /// Calling this is optional but may improve disk usage or performance. It is not automatically
     /// called, but the backing database may have its own automatic routines.
     fn compact(&mut self) -> Result<(), Self::Error>;
-
-    // TODO -- new_custom if there's a need.
 
     /// Cleanly shut down the persistent shuffler and ensures all data is flushed to disk.
     ///
@@ -112,9 +149,9 @@ impl Options {
 
     /// Controls how deserialization errors are handled. By default a key that can't be
     /// deserialized will be treated as an error. This guards against accidentally opening a
-    /// database with the wrong type. The default value is false.
+    /// database with the wrong type. The default value is `false`.
     ///
-    /// Setting this to true will cause any keys that can't be deserialized to be removed from the
+    /// Setting this to `true` will cause any keys that can't be deserialized to be removed from the
     /// database silently without exposing an error. The intended use case is for when the
     /// structure or serialized format is expected to change in a partially backwards-incompatible
     /// way.

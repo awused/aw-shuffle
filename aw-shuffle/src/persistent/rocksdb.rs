@@ -92,6 +92,21 @@ where
     H: Hasher + Clone,
     R: Rng,
 {
+    fn load(&mut self, item: Self::Item) -> Result<bool, Self::Error> {
+        if self.internal.tree.find_node(&item).is_some() {
+            return Ok(false);
+        }
+
+        match self.get(&item)? {
+            Some(gen) => Ok(self.internal.tree.insert(item, gen)),
+            None => self.add(item),
+        }
+    }
+
+    fn soft_remove(&mut self, item: &Self::Item) -> Result<Option<Self::Item>, Self::Error> {
+        Ok(self.internal.inf_remove(item))
+    }
+
     fn compact(&mut self) -> Result<(), Self::Error> {
         self.db.compact_range::<&[u8], &[u8]>(None, None);
         self.db.flush().map_err(|e| e.into())
@@ -214,7 +229,16 @@ where
     H: Hasher + Clone,
     R: Rng,
 {
-    fn load(
+    fn get(&mut self, item: &T) -> Result<Option<u64>, Error> {
+        let key = encode::to_vec(item)?;
+
+        match self.db.get_pinned(key)? {
+            Some(value) => Ok(Some(u64::deserialize(&mut Deserializer::new(&*value))?)),
+            None => Ok(None),
+        }
+    }
+
+    fn load_all(
         db: &DB,
         internal: &mut BaseShuffler<T, H, R>,
         remove_error: bool,
@@ -355,7 +379,7 @@ impl<T: Item> Shuffler<T> {
 
         let mut internal = crate::Shuffler::new(options.bias, options.new_item_handling);
 
-        Self::load(
+        Self::load_all(
             &db,
             &mut internal,
             options.remove_on_deserialization_error,

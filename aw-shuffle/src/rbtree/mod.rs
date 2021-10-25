@@ -311,7 +311,7 @@ where
         hasher.finish()
     }
 
-    unsafe fn find_node(&self, item: &T) -> Option<NonNull<Node<T>>> {
+    pub(crate) fn find_node(&self, item: &T) -> Option<NonNull<Node<T>>> {
         let mut n = match self.root {
             None => return None,
             Some(r) => r,
@@ -320,7 +320,7 @@ where
         let h = self.hash(item);
 
         loop {
-            let nb = n.as_ref();
+            let nb = unsafe { n.as_ref() };
             let next = match (h, item).cmp(&(nb.hash, &nb.item)) {
                 Ordering::Equal => break,
                 Ordering::Less => nb.left,
