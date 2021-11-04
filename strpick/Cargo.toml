@@ -16,4 +16,5 @@ rmpv = { version = "1.0.0" }
 rocksdb = { version = "0.17.0", default-features = false, features = ["lz4"] }
 structopt = "0.3"
 tempfile = "3.2.0"
+unicode-width = "0.1.9"
 

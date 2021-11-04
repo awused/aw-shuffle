@@ -4,6 +4,3 @@ members = [
   "strpick",
   "aw-shuffle",
 ]
-
-[profile.release]
-lto = "fat"

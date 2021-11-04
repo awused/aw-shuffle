@@ -9,11 +9,12 @@ use aw_shuffle::AwShuffler;
 use rocksdb::{Options, DB};
 use structopt::StructOpt;
 use tempfile::tempdir;
+use unicode_width::UnicodeWidthStr;
 
 #[derive(StructOpt)]
 #[structopt(name = "strpick", about = "Selects random strings from stdin.")]
 struct Opt {
-    #[structopt(long)]
+    #[structopt(long, parse(from_os_str))]
     /// The RocksDB database used for storing persistent data between runs.
     db: PathBuf,
 
@@ -84,11 +85,12 @@ fn print(mut vals: Vec<(String, u64)>) {
         } else {
             (*g as f64).log10() as usize + 1
         };
-        (max(kw, s.len()), max(vw, gw))
+        (max(kw, UnicodeWidthStr::width(s.as_str())), max(vw, gw))
     });
 
     for (s, g) in vals {
-        println!("{0:1$} | {2:>3$}", s, kw, g, vw);
+        let padding = " ".repeat(kw - UnicodeWidthStr::width(s.as_str()));
+        println!("{}{} | {2:>3$}", s, padding, g, vw);
     }
 }
 
