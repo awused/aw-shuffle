@@ -368,7 +368,7 @@ impl<T: Item> Shuffler<T> {
     ) -> Result<Self, Error> {
         let mut db_options = rocksdb::Options::default();
         db_options.set_max_open_files(100);
-        // db_options.set_compression_type(rocksdb::DBCompressionType::Lz4);
+        db_options.set_compression_type(rocksdb::DBCompressionType::Lz4);
         db_options.create_if_missing(true);
         db_options.create_missing_column_families(true);
         // Much more efficient on slower storage, probably minimal impact on fast storage.
