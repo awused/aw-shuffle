@@ -6,22 +6,22 @@ description = "Library for randomly selecting items, favouring less recently sel
 readme = "../README.md"
 license = "MIT"
 keywords = ["shuffle"]
-homepage = "https://github.com/awused/go-strpick"
-repository = "https://github.com/awused/go-strpick"
+homepage = "https://github.com/awused/aw-shuffle"
+repository = "https://github.com/awused/aw-shuffle"
 
 [features]
 persistent = ["serde", "rmp-serde"]
 rocks = ["persistent", "rocksdb"]
 
 [dependencies]
-ahash = "0.7.4"
+ahash = "0.7.6"
 rand = "0.8.4"
 rmp-serde = { version = "0.15.5", optional = true }
 rocksdb = { version = "0.17.0", default-features = false, features = ["lz4"], optional = true }
 serde = { version = "1.0.130", default-features = false, optional = true }
 
 [dev-dependencies]
-criterion = "0.3"
+criterion = "0.3.5"
 
 [[bench]]
 name = "benchmarks"

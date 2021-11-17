@@ -58,8 +58,6 @@ let try_unique_10 = shuffler.try_unique_n(10).unwrap().unwrap();
 
 The [InfallibleShuffler] trait offers a more ergnonomic API for in-memory shufflers.
 
-There is also a go version, see the [documentation](http://godoc.org/github.com/awused/go-strpick)
-
 ## Persistent Shufflers
 
 Aw-Shuffler offers optional persistence through the [`PersistentShuffler`](persistent::PersistentShuffler) trait. Currently the only storage backend is RocksDB controlled by the `rocksdb` feature flag.
@@ -68,7 +66,7 @@ Use [`close`](persistent::PersistentShuffler::close) to safely close persistent 
 
 ## Standalone Executable
 
-The [strpick](https://github.com/awused/go-strpick/strpick) directory contains a standalone executable that can be used in shell scripts to select random strings. It reads newline separated strings from stdin and uses a RocksDB database for persistence between runs.
+The [strpick](https://github.com/awused/aw-shuffle/strpick) directory contains a standalone executable that can be used in shell scripts to select random strings. It reads newline separated strings from stdin and uses a RocksDB database for persistence between runs.
 
 # How It Works
 

@@ -6,15 +6,15 @@ description = "Simple binary interface for shuffling strings using aw-shuffle an
 readme = "../README.md"
 license = "MIT"
 keywords = ["shuffle"]
-homepage = "https://github.com/awused/go-strpick"
-repository = "https://github.com/awused/go-strpick"
+homepage = "https://github.com/awused/aw-shuffle"
+repository = "https://github.com/awused/aw-shuffle"
 
 
 [dependencies]
 aw-shuffle = { path = "../aw-shuffle", features = [ "rocks" ] }
-rmpv = { version = "1.0.0" }
+rmpv = "1.0.0"
 rocksdb = { version = "0.17.0", default-features = false, features = ["lz4"] }
-structopt = "0.3"
+structopt = "0.3.25"
 tempfile = "3.2.0"
 unicode-width = "0.1.9"
 
