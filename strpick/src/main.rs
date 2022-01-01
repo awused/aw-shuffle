@@ -6,12 +6,12 @@ use std::{io, usize};
 use aw_shuffle::persistent::rocksdb::Shuffler;
 use aw_shuffle::persistent::PersistentShuffler;
 use aw_shuffle::AwShuffler;
+use clap::StructOpt;
 use rocksdb::{Options, DB};
-use structopt::StructOpt;
 use tempfile::tempdir;
 use unicode_width::UnicodeWidthStr;
 
-#[derive(StructOpt)]
+#[derive(clap::StructOpt)]
 #[structopt(name = "strpick", about = "Selects random strings from stdin.")]
 struct Opt {
     #[structopt(long, parse(from_os_str))]
@@ -35,7 +35,7 @@ enum Command {
 }
 
 fn main() {
-    let opt = Opt::from_args();
+    let opt = Opt::parse();
 
 
     match &opt.cmd {

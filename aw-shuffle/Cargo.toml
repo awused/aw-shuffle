@@ -18,7 +18,7 @@ ahash = "0.7.6"
 rand = "0.8.4"
 rmp-serde = { version = "0.15.5", optional = true }
 rocksdb = { version = "0.17.0", default-features = false, features = ["lz4"], optional = true }
-serde = { version = "1.0.130", default-features = false, optional = true }
+serde = { version = "1.0.132", default-features = false, optional = true }
 
 [dev-dependencies]
 criterion = "0.3.5"
