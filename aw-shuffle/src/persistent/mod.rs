@@ -11,8 +11,9 @@ pub mod rocksdb;
 
 /// The minimum set of traits any item needs to implement for use in a [`PersistentShuffler`].
 ///
-/// It is a logic error for an item to be mutated in a way that changes its hash or its serialized
-/// representation. Items may be lost if two unequal items serialize to the same representation.
+/// It is a logic error for an item to be mutated in a way that changes its hash, equality, or its
+/// serialized representation. Items may be lost if two unequal items serialize to the same
+/// representation.
 ///
 /// Changing the serialized representation may result in duplicate or stale values being
 /// deserialied from the database in the future.
@@ -34,8 +35,8 @@ impl<I: super::Item + Serialize + DeserializeOwned> Item for I {}
 ///
 /// Most operations are the same but cause an additional database read or write.
 ///
-/// It is a logic error for an [`Item`] to be mutated in a way that changes its hash or its
-/// serialized representation.
+/// It is a logic error for an [`Item`] to be mutated in a way that changes its hash, equality, or
+/// its serialized representation.
 ///
 /// See [`Item`] for documentation on performance concerns and limitations.
 ///
@@ -47,7 +48,7 @@ impl<I: super::Item + Serialize + DeserializeOwned> Item for I {}
 ///
 /// There are two ways to use a persistent shuffler. Either as a drop-in, durable
 /// replacement for an in-memory [`AwShuffler`] where the database reflects the same state as the
-/// in-memory shuffler 1:1, or allowing the in-mrmemory shuffler to diverge from the database.
+/// in-memory shuffler 1:1, or allowing the in-memory shuffler to diverge from the database.
 ///
 /// To use the shuffler as a regular shuffler that only saves its state between runs, use the
 /// regular [`AwShuffler::add`] and [`AwShuffler::remove`] methods to manage items. Leave

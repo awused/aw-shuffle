@@ -26,13 +26,13 @@ pub mod _secret_do_not_use {
 
 /// The minimum set of traits any item needs to implement for use in the shuffler.
 ///
-/// It is a logic error for an item to be mutated in a way that changes its hash.
+/// It is a logic error for an item to be mutated in a way that changes its hash or equality.
 pub trait Item: Hash + Eq + Ord {}
 impl<T: Hash + Eq + Ord> Item for T {}
 
 /// The generic trait all shufflers implement.
 ///
-/// It is a logic error for an [`Item`] to be mutated in a way that changes its hash.
+/// It is a logic error for an [`Item`] to be mutated in a way that changes its hash or equality.
 ///
 /// See also [`InfallibleShuffler`] and [`persistent::PersistentShuffler`].
 pub trait AwShuffler: private::Sealed {
