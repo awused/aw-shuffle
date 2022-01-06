@@ -149,8 +149,8 @@ impl<T: Item> Node<T> {
         }
     }
 
-    unsafe fn recalc_ancestors(node: &mut Self) {
-        let mut node = node;
+    unsafe fn recalc_ancestors(mut node: NonNull<Self>) {
+        let mut node = node.as_mut();
         loop {
             node.recalculate();
             node = match &mut node.parent {
@@ -160,11 +160,12 @@ impl<T: Item> Node<T> {
         }
     }
 
-    pub(crate) fn set_generation(&mut self, next_gen: u64) {
-        if self.gen != next_gen {
-            self.gen = next_gen;
-            unsafe {
-                Self::recalc_ancestors(self);
+    pub(crate) fn set_generation(mut node: NonNull<Self>, next_gen: u64) {
+        unsafe {
+            let n = node.as_mut();
+            if n.gen != next_gen {
+                n.gen = next_gen;
+                Self::recalc_ancestors(node);
             }
         }
     }
@@ -507,8 +508,8 @@ where
                 }
             }
 
-            if let Some(mut p) = n.as_ref().parent {
-                Node::recalc_ancestors(p.as_mut())
+            if let Some(p) = n.as_ref().parent {
+                Node::recalc_ancestors(p)
             }
             // By now there are no pointers to n in the tree and it can be dropped.
             let n = Box::from_raw(n.as_ptr());
@@ -956,7 +957,7 @@ pub mod tests {
     use ahash::{AHashMap, RandomState};
     use rand::prelude::SliceRandom;
 
-    use super::Rbtree;
+    use super::{Node, Rbtree};
 
     #[derive(Clone)]
     pub(crate) struct DummyHasher {
@@ -1545,11 +1546,9 @@ pub mod tests {
         assert_eq!(rb.print(), "(5 5 b (2 2 r  ) (7 7 r  ))");
         rb.verify();
 
-        let mut n = rb.find_next(0, 2);
+        let n = rb.find_next(0, 2);
 
-        unsafe {
-            n.as_mut().set_generation(1000);
-        }
+        Node::set_generation(n, 1000);
 
         assert_eq!(rb.print(), "(5 5 b (2 1000 r  ) (7 7 r  ))");
         rb.verify();

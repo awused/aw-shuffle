@@ -9,7 +9,7 @@ use ahash::AHasher;
 use rand::distributions::Uniform;
 use rand::prelude::{Distribution, StdRng};
 use rand::{Rng, SeedableRng};
-use rbtree::Rbtree;
+use rbtree::{Node, Rbtree};
 
 mod infallible;
 #[cfg(feature = "persistent")]
@@ -318,10 +318,10 @@ where
         let random_gen = self.random_generation();
         let index = self.rng.gen_range(0..size);
 
-        let mut node = self.tree.find_next(index, random_gen);
+        let node = self.tree.find_next(index, random_gen);
         let (next_gen, _) = self.next_generation();
 
-        unsafe { node.as_mut().set_generation(next_gen.get()) };
+        Node::set_generation(node, next_gen.get());
 
         unsafe { Ok(Some(node.as_ref().get())) }
     }
@@ -342,10 +342,10 @@ where
             let random_gen = self.random_generation();
             let index = index_range.sample(&mut self.rng);
 
-            let mut node = self.tree.find_next(index, random_gen);
+            let node = self.tree.find_next(index, random_gen);
 
             // Set the generation here to try to prioritize other items.
-            unsafe { node.as_mut().set_generation(next_gen.get()) };
+            Node::set_generation(node, next_gen.get());
 
             selected.push(node)
         }
@@ -375,10 +375,10 @@ where
             let random_gen = self.random_generation_below(next_gen);
             let index = index_range.sample(&mut self.rng);
 
-            let mut node = self.tree.find_next(index, random_gen);
+            let node = self.tree.find_next(index, random_gen);
 
             // Set the generation here to try to prioritize other items.
-            unsafe { node.as_mut().set_generation(next_gen.get()) };
+            Node::set_generation(node, next_gen.get());
 
             selected.push(node)
         }
