@@ -1,4 +1,5 @@
 #![warn(missing_docs)]
+#![warn(unsafe_op_in_unsafe_fn)]
 #![doc = include_str!("../../README.md")]
 use std::convert::Infallible;
 use std::error::Error;

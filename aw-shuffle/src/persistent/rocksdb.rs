@@ -109,7 +109,7 @@ where
 
     fn compact(&mut self) -> Result<(), Self::Error> {
         self.db.compact_range::<&[u8], &[u8]>(None, None);
-        self.db.flush().map_err(|e| e.into())
+        self.db.flush().map_err(Into::into)
     }
 
     fn close(mut self) -> Result<(), Self::Error> {
@@ -317,7 +317,7 @@ where
             batch.put(key, &gen);
         }
 
-        db.write(batch).map_err(|e| e.into())
+        db.write(batch).map_err(Into::into)
     }
 
     fn handle_reset(&self) -> Result<(), Error> {
@@ -327,7 +327,7 @@ where
     fn delete(&self, item: &T) -> Result<(), Error> {
         let key = encode::to_vec(item)?;
 
-        self.db.delete(key).map_err(|e| e.into())
+        self.db.delete(key).map_err(Into::into)
     }
 }
 

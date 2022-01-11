@@ -73,7 +73,7 @@ impl<T: Item> Node<T> {
         &self.item
     }
 
-    unsafe fn other_child(&self, c: &Self) -> &Option<NonNull<Self>> {
+    fn other_child(&self, c: &Self) -> &Option<NonNull<Self>> {
         if self.is_left_child(c) {
             &self.right
         } else {
@@ -81,45 +81,45 @@ impl<T: Item> Node<T> {
         }
     }
 
-    unsafe fn is_left_child(&self, c: &Self) -> bool {
+    fn is_left_child(&self, c: &Self) -> bool {
         if let Some(left) = self.left {
-            std::ptr::eq(c, left.as_ref())
+            unsafe { std::ptr::eq(c, left.as_ref()) }
         } else {
             false
         }
     }
 
-    unsafe fn has_red_child(&self) -> bool {
+    fn has_red_child(&self) -> bool {
         if let Some(left) = self.left {
-            if left.as_ref().red {
+            if unsafe { left.as_ref() }.red {
                 return true;
             }
         }
 
         if let Some(right) = self.right {
-            return right.as_ref().red;
+            return unsafe { right.as_ref() }.red;
         }
         false
     }
 
-    unsafe fn sole_red_child(&self) -> SoleRedChild<T> {
+    fn sole_red_child(&self) -> SoleRedChild<T> {
         match (self.left, self.right) {
             (None, None) => SoleRedChild::None,
             (None, Some(r)) => {
-                if r.as_ref().red {
+                if unsafe { r.as_ref() }.red {
                     SoleRedChild::Right(r)
                 } else {
                     SoleRedChild::None
                 }
             }
             (Some(l), None) => {
-                if l.as_ref().red {
+                if unsafe { l.as_ref() }.red {
                     SoleRedChild::Left(l)
                 } else {
                     SoleRedChild::None
                 }
             }
-            (Some(l), Some(r)) => match (l.as_ref().red, r.as_ref().red) {
+            (Some(l), Some(r)) => match unsafe { (l.as_ref().red, r.as_ref().red) } {
                 (true, false) => SoleRedChild::Left(l),
                 (false, true) => SoleRedChild::Right(r),
                 _ => SoleRedChild::None,
@@ -127,13 +127,13 @@ impl<T: Item> Node<T> {
         }
     }
 
-    unsafe fn recalculate(&mut self) {
+    fn recalculate(&mut self) {
         self.children = 0;
         self.max_gen = self.gen;
         self.min_gen = self.gen;
 
         if let Some(left) = self.left {
-            let lb = left.as_ref();
+            let lb = unsafe { left.as_ref() };
 
             self.children += 1 + lb.children;
             self.min_gen = min(self.min_gen, lb.min_gen);
@@ -141,7 +141,7 @@ impl<T: Item> Node<T> {
         }
 
         if let Some(right) = self.right {
-            let rb = right.as_ref();
+            let rb = unsafe { right.as_ref() };
 
             self.children += 1 + rb.children;
             self.min_gen = min(self.min_gen, rb.min_gen);
@@ -149,30 +149,28 @@ impl<T: Item> Node<T> {
         }
     }
 
-    unsafe fn recalc_ancestors(mut node: NonNull<Self>) {
-        let mut node = node.as_mut();
+    fn recalc_ancestors(mut node: NonNull<Self>) {
+        let mut node = unsafe { node.as_mut() };
         loop {
             node.recalculate();
             node = match &mut node.parent {
                 None => break,
-                Some(p) => p.as_mut(),
+                Some(p) => unsafe { p.as_mut() },
             };
         }
     }
 
     pub(crate) fn set_generation(mut node: NonNull<Self>, next_gen: u64) {
-        unsafe {
-            let n = node.as_mut();
-            if n.gen != next_gen {
-                n.gen = next_gen;
-                Self::recalc_ancestors(node);
-            }
+        let n = unsafe { node.as_mut() };
+        if n.gen != next_gen {
+            n.gen = next_gen;
+            Self::recalc_ancestors(node);
         }
     }
 
     // Finds the first node with index >= i and gen <= g
-    unsafe fn find_above(node: NonNull<Self>, i: usize, g: u64) -> Result<NonNull<Self>, usize> {
-        let nb = node.as_ref();
+    fn find_above(node: NonNull<Self>, i: usize, g: u64) -> Result<NonNull<Self>, usize> {
+        let nb = unsafe { node.as_ref() };
         if nb.min_gen > g || nb.children + 1 < i {
             return Err(nb.children + 1);
         }
@@ -228,27 +226,31 @@ impl<T: Item> Node<T> {
         }
     }
 
-    unsafe fn reset(&mut self) {
+    fn reset(&mut self) {
         self.gen = 0;
         self.min_gen = 0;
         self.max_gen = 0;
-        if let Some(mut left) = self.left {
-            left.as_mut().reset();
-        }
-        if let Some(mut right) = self.right {
-            right.as_mut().reset();
+        unsafe {
+            if let Some(mut left) = self.left {
+                left.as_mut().reset();
+            }
+            if let Some(mut right) = self.right {
+                right.as_mut().reset();
+            }
         }
     }
 
     // Allow boxed self to avoid moving Self while it is still referenced by NonNulls.
     #[allow(clippy::boxed_local)]
-    unsafe fn destroy_tree(mut node: Box<Self>) {
+    fn destroy_tree(mut node: Box<Self>) {
         node.parent = None;
-        if let Some(left) = node.left.take() {
-            Self::destroy_tree(Box::from_raw(left.as_ptr()));
-        }
-        if let Some(right) = node.right.take() {
-            Self::destroy_tree(Box::from_raw(right.as_ptr()));
+        unsafe {
+            if let Some(left) = node.left.take() {
+                Self::destroy_tree(Box::from_raw(left.as_ptr()));
+            }
+            if let Some(right) = node.right.take() {
+                Self::destroy_tree(Box::from_raw(right.as_ptr()));
+            }
         }
 
         // By now, all pointers to this node have been destroyed, it's safe to drop and deallocate
@@ -367,67 +369,69 @@ where
         };
 
         let mut p;
-        unsafe {
-            loop {
-                p = c;
+        loop {
+            p = c;
 
-                let next = match node.cmp(c.as_ref()) {
+            let next = unsafe {
+                match node.cmp(c.as_ref()) {
                     Ordering::Equal => return false,
                     Ordering::Less => c.as_ref().left,
                     Ordering::Greater => c.as_ref().right,
-                };
+                }
+            };
 
-                match next {
-                    None => break,
-                    Some(next) => c = next,
-                };
-            }
+            match next {
+                None => break,
+                Some(next) => c = next,
+            };
+        }
 
-            self.size += 1;
-            node.parent = Some(p);
-            let node = NonNull::new_unchecked(Box::into_raw(Box::from(node)));
+        self.size += 1;
+        node.parent = Some(p);
+        let node = unsafe { NonNull::new_unchecked(Box::into_raw(Box::from(node))) };
 
+        unsafe {
             match node.as_ref().cmp(p.as_ref()) {
                 Ordering::Equal => unreachable!(),
                 Ordering::Less => p.as_mut().left = Some(node),
                 Ordering::Greater => p.as_mut().right = Some(node),
             }
+        }
 
-            loop {
-                let mut pb = p.as_mut();
+        loop {
+            let mut pb = unsafe { p.as_mut() };
 
-                pb.children += 1;
+            pb.children += 1;
 
-                if gen > pb.max_gen {
-                    pb.max_gen = gen;
-                } else if gen < pb.min_gen {
-                    pb.min_gen = gen;
-                }
-
-                let next = pb.parent;
-
-                match next {
-                    None => break,
-                    Some(next) => p = next,
-                }
+            if gen > pb.max_gen {
+                pb.max_gen = gen;
+            } else if gen < pb.min_gen {
+                pb.min_gen = gen;
             }
 
+            let next = pb.parent;
 
-            self.fix_after_insert(node);
-            true
+            match next {
+                None => break,
+                Some(next) => p = next,
+            }
         }
+
+
+        self.fix_after_insert(node);
+        true
     }
 
     pub fn delete(&mut self, item: &T) -> Option<(T, u64)> {
+        let n = self.find_node(item);
+        let mut n = match n {
+            None => return None,
+            Some(n) => n,
+        };
+
+        self.size -= 1;
+
         unsafe {
-            let n = self.find_node(item);
-            let mut n = match n {
-                None => return None,
-                Some(n) => n,
-            };
-
-            self.size -= 1;
-
             let nb = n.as_mut();
             // Ensure the node has only one child by replacing it with its successor
             let n = if let (Some(_), Some(right)) = (nb.left, nb.right) {
@@ -518,180 +522,188 @@ where
         }
     }
 
-    unsafe fn fix_after_insert(&mut self, node: NonNull<Node<T>>) {
-        let mut c = node;
-        let mut p = c.as_ref().parent;
-        while let Some(mut pnd) = p {
-            if !pnd.as_ref().red {
+    fn fix_after_insert(&mut self, node: NonNull<Node<T>>) {
+        unsafe {
+            let mut c = node;
+            let mut p = c.as_ref().parent;
+            while let Some(mut pnd) = p {
+                if !pnd.as_ref().red {
+                    return;
+                }
+
+                let mut g = pnd.as_ref().parent.expect("Impossible");
+                let mut gb = g.as_mut();
+
+                let ps = gb.other_child(pnd.as_ref());
+
+
+                if let Some(mut ps) = ps {
+                    let mut psb = ps.as_mut();
+                    if psb.red {
+                        let mut pb = pnd.as_mut();
+                        // The parent-sibling is red, so we can continue up the tree
+                        pb.red = false;
+                        psb.red = false;
+                        gb.red = true;
+                        c = g;
+                        p = c.as_ref().parent;
+                        continue;
+                    };
+                };
+
+                if gb.is_left_child(pnd.as_ref()) {
+                    if let Some(pright) = pnd.as_ref().right {
+                        if std::ptr::eq(c.as_ptr(), pright.as_ptr()) {
+                            self.rotate_left(pnd);
+                            pnd = c;
+                        }
+                    }
+
+                    self.rotate_right(g);
+                } else {
+                    if let Some(pleft) = pnd.as_ref().left.as_ref() {
+                        if std::ptr::eq(c.as_ptr(), pleft.as_ptr()) {
+                            self.rotate_right(pnd);
+                            pnd = c;
+                        }
+                    }
+
+                    self.rotate_left(g);
+                }
+                pnd.as_mut().red = false;
+                g.as_mut().red = true;
                 return;
             }
-
-            let mut g = pnd.as_ref().parent.expect("Impossible");
-            let mut gb = g.as_mut();
-
-            let ps = gb.other_child(pnd.as_ref());
-
-
-            if let Some(mut ps) = ps {
-                let mut psb = ps.as_mut();
-                if psb.red {
-                    let mut pb = pnd.as_mut();
-                    // The parent-sibling is red, so we can continue up the tree
-                    pb.red = false;
-                    psb.red = false;
-                    gb.red = true;
-                    c = g;
-                    p = c.as_ref().parent;
-                    continue;
-                };
-            };
-
-            if gb.is_left_child(pnd.as_ref()) {
-                if let Some(pright) = pnd.as_ref().right {
-                    if std::ptr::eq(c.as_ptr(), pright.as_ptr()) {
-                        self.rotate_left(pnd);
-                        pnd = c;
-                    }
-                }
-
-                self.rotate_right(g);
-            } else {
-                if let Some(pleft) = pnd.as_ref().left.as_ref() {
-                    if std::ptr::eq(c.as_ptr(), pleft.as_ptr()) {
-                        self.rotate_right(pnd);
-                        pnd = c;
-                    }
-                }
-
-                self.rotate_left(g);
-            }
-            pnd.as_mut().red = false;
-            g.as_mut().red = true;
-            return;
+            // We've replaced the root, and it cannot be red
+            c.as_mut().red = false;
         }
-        // We've replaced the root, and it cannot be red
-        c.as_mut().red = false;
     }
 
     // This is only called when the node to be deleted is a non-root black node, and therefore has
     // a sibling.
-    unsafe fn fix_before_delete(&mut self, mut node: NonNull<Node<T>>) {
-        while node.as_ref().parent.is_some() {
-            let mut p = node
-                .as_ref()
-                .parent
-                .expect("Non-root black node must have parent.");
-            let mut pb = p.as_mut();
-            let mut s = pb
-                .other_child(node.as_ref())
-                .expect("Non-root black node must have sibling");
+    fn fix_before_delete(&mut self, mut node: NonNull<Node<T>>) {
+        while unsafe { node.as_ref() }.parent.is_some() {
+            unsafe {
+                let mut p = node
+                    .as_ref()
+                    .parent
+                    .expect("Non-root black node must have parent.");
+                let mut pb = p.as_mut();
+                let mut s = pb
+                    .other_child(node.as_ref())
+                    .expect("Non-root black node must have sibling");
 
-            let mut sb = s.as_mut();
+                let mut sb = s.as_mut();
 
-            // The sibling is red, make it black and make it into the new parent.
-            if sb.red {
-                sb.red = false;
-                pb.red = true;
-                let left = pb.is_left_child(node.as_ref());
-                if left {
-                    self.rotate_left(p);
-                } else {
-                    self.rotate_right(p);
+                // The sibling is red, make it black and make it into the new parent.
+                if sb.red {
+                    sb.red = false;
+                    pb.red = true;
+                    let left = pb.is_left_child(node.as_ref());
+                    if left {
+                        self.rotate_left(p);
+                    } else {
+                        self.rotate_right(p);
+                    }
                 }
             }
 
-            let mut p = node
-                .as_ref()
-                .parent
-                .expect("Non-root black node must have parent.");
-            let mut pb = p.as_mut();
-            let mut s = pb
-                .other_child(node.as_ref())
-                .expect("Non-root black node must have sibling");
+            unsafe {
+                let mut p = node
+                    .as_ref()
+                    .parent
+                    .expect("Non-root black node must have parent.");
+                let mut pb = p.as_mut();
+                let mut s = pb
+                    .other_child(node.as_ref())
+                    .expect("Non-root black node must have sibling");
 
-            let mut sb = s.as_mut();
+                let mut sb = s.as_mut();
 
-            if !pb.red && !sb.red && !sb.has_red_child() {
-                // All three nodes are black and the sibling has no red children.
-                // Mark S as red so the subtree rooted at p meets the black-path requirement.
-                // Continue up the tree.
-                sb.red = true;
-                node = p;
-                continue;
-            }
+                if !pb.red && !sb.red && !sb.has_red_child() {
+                    // All three nodes are black and the sibling has no red children.
+                    // Mark S as red so the subtree rooted at p meets the black-path requirement.
+                    // Continue up the tree.
+                    sb.red = true;
+                    node = p;
+                    continue;
+                }
 
-            if pb.red && !sb.red && !sb.has_red_child() {
-                // Parent is red, S is black with no red children.
-                // We can move the redness down to S and maintain the black-path requirement.
-                sb.red = true;
-                pb.red = false;
-                return;
-            }
+                if pb.red && !sb.red && !sb.has_red_child() {
+                    // Parent is red, S is black with no red children.
+                    // We can move the redness down to S and maintain the black-path requirement.
+                    sb.red = true;
+                    pb.red = false;
+                    return;
+                }
 
-            let sb = s.as_ref();
+                let sb = s.as_ref();
 
-            if !sb.red {
-                // All three nodes are black but S has at least one red child.
-                // If there is a single red child on the inside, rotate that child onto S.
+                if !sb.red {
+                    // All three nodes are black but S has at least one red child.
+                    // If there is a single red child on the inside, rotate that child onto S.
 
 
-                if pb.is_left_child(node.as_ref()) {
-                    if let SoleRedChild::Left(mut l) = sb.sole_red_child() {
-                        l.as_mut().red = false;
+                    if pb.is_left_child(node.as_ref()) {
+                        if let SoleRedChild::Left(mut l) = sb.sole_red_child() {
+                            l.as_mut().red = false;
+                            s.as_mut().red = true;
+                            self.rotate_right(s);
+                        }
+                    } else if let SoleRedChild::Right(mut r) = sb.sole_red_child() {
+                        r.as_mut().red = false;
                         s.as_mut().red = true;
-                        self.rotate_right(s);
+                        self.rotate_left(s);
                     }
-                } else if let SoleRedChild::Right(mut r) = sb.sole_red_child() {
-                    r.as_mut().red = false;
-                    s.as_mut().red = true;
-                    self.rotate_left(s);
                 }
             }
 
             // S is red or has two red children.
             // Rotate S onto parent and copy parent's colour, make both its children black.
 
-            let mut p = node
-                .as_ref()
-                .parent
-                .expect("Non-root black node must have parent.");
-            let mut s = p
-                .as_ref()
-                .other_child(node.as_ref())
-                .expect("Non-root black node must have sibling");
+            unsafe {
+                let mut p = node
+                    .as_ref()
+                    .parent
+                    .expect("Non-root black node must have parent.");
+                let mut s = p
+                    .as_ref()
+                    .other_child(node.as_ref())
+                    .expect("Non-root black node must have sibling");
 
-            let mut pb = p.as_mut();
-            let mut sb = s.as_mut();
+                let mut pb = p.as_mut();
+                let mut sb = s.as_mut();
 
-            sb.red = pb.red;
-            pb.red = false;
-            let sb = s.as_ref();
+                sb.red = pb.red;
+                pb.red = false;
+                let sb = s.as_ref();
 
-            if pb.is_left_child(node.as_ref()) {
-                if let Some(mut r) = sb.right {
-                    r.as_mut().red = false;
+                if pb.is_left_child(node.as_ref()) {
+                    if let Some(mut r) = sb.right {
+                        r.as_mut().red = false;
+                    }
+                    self.rotate_left(p);
+                } else {
+                    if let Some(mut l) = sb.left {
+                        l.as_mut().red = false;
+                    }
+                    self.rotate_right(p);
                 }
-                self.rotate_left(p);
-            } else {
-                if let Some(mut l) = sb.left {
-                    l.as_mut().red = false;
-                }
-                self.rotate_right(p);
             }
 
             return;
         }
     }
 
-    unsafe fn rotate_right(&mut self, mut parent: NonNull<Node<T>>) {
+    fn rotate_right(&mut self, mut parent: NonNull<Node<T>>) {
         // Left child becomes the new parent
-        let mut pb = parent.as_mut();
+        let mut pb = unsafe { parent.as_mut() };
         let mut l = pb.left.expect("Tried to make None child into parent");
-        let mut lb = l.as_mut();
+        let mut lb = unsafe { l.as_mut() };
 
         pb.left = lb.right.take();
         if let Some(mut p_left) = pb.left {
-            p_left.as_mut().parent = Some(parent);
+            unsafe { p_left.as_mut() }.parent = Some(parent);
         }
 
         lb.right = Some(parent);
@@ -699,7 +711,7 @@ where
         pb.parent = Some(l);
 
         if let Some(mut l_parent) = lb.parent {
-            let mut lpb = l_parent.as_mut();
+            let mut lpb = unsafe { l_parent.as_mut() };
             if lpb.is_left_child(pb) {
                 lpb.left = Some(l);
             } else {
@@ -713,15 +725,15 @@ where
         lb.recalculate();
     }
 
-    unsafe fn rotate_left(&mut self, mut parent: NonNull<Node<T>>) {
+    fn rotate_left(&mut self, mut parent: NonNull<Node<T>>) {
         // Right child becomes the new parent
-        let mut pb = parent.as_mut();
+        let mut pb = unsafe { parent.as_mut() };
         let mut r = pb.right.expect("Tried to make None child into parent");
-        let mut rb = r.as_mut();
+        let mut rb = unsafe { r.as_mut() };
 
         pb.right = rb.left.take();
         if let Some(mut p_right) = pb.right {
-            p_right.as_mut().parent = Some(parent);
+            unsafe { p_right.as_mut() }.parent = Some(parent);
         }
 
         rb.left = Some(parent);
@@ -729,7 +741,7 @@ where
         pb.parent = Some(r);
 
         if let Some(mut r_parent) = rb.parent {
-            let mut rpb = r_parent.as_mut();
+            let mut rpb = unsafe { r_parent.as_mut() };
             if !rpb.is_left_child(pb) {
                 rpb.right = Some(r);
             } else {
@@ -760,11 +772,9 @@ where
             .root
             .expect("Root cannot be None in a tree with size > 0");
 
-        unsafe {
-            match Node::find_above(root, index, gen) {
-                Ok(n) => n,
-                Err(_) => Node::find_above(root, 0, gen).expect("Corrupt tree"),
-            }
+        match Node::find_above(root, index, gen) {
+            Ok(n) => n,
+            Err(_) => Node::find_above(root, 0, gen).expect("Corrupt tree"),
         }
     }
 
@@ -850,58 +860,60 @@ where
         format!("({} {} {} {} {})", self.item, self.gen, c, left, right)
     }
 
-    unsafe fn verify(&self) -> usize {
+    fn verify(&self) -> usize {
         let mut min_gen = self.gen;
         let mut max_gen = self.gen;
         let mut children = 0;
 
-        let (l_black, l_red) = if let Some(left) = self.left {
-            let lb = left.as_ref();
-            if let Some(lp) = lb.parent {
-                assert_eq!(self, lp.as_ref());
+        unsafe {
+            let (l_black, l_red) = if let Some(left) = self.left {
+                let lb = left.as_ref();
+                if let Some(lp) = lb.parent {
+                    assert_eq!(self, lp.as_ref());
+                } else {
+                    unreachable!();
+                }
+
+                assert!(self.hash >= lb.hash);
+                assert!(self > lb);
+
+                children += lb.children + 1;
+                min_gen = min(min_gen, lb.min_gen);
+                max_gen = max(max_gen, lb.max_gen);
+                (lb.verify(), lb.red)
             } else {
-                unreachable!();
-            }
+                (0, false)
+            };
 
-            assert!(self.hash >= lb.hash);
-            assert!(self > lb);
+            let (r_black, r_red) = if let Some(right) = self.right {
+                let rb = right.as_ref();
+                if let Some(rp) = rb.parent {
+                    assert_eq!(self, rp.as_ref());
+                } else {
+                    unreachable!();
+                }
 
-            children += lb.children + 1;
-            min_gen = min(min_gen, lb.min_gen);
-            max_gen = max(max_gen, lb.max_gen);
-            (lb.verify(), lb.red)
-        } else {
-            (0, false)
-        };
+                assert!(self.hash <= rb.hash);
+                assert!(self < rb);
 
-        let (r_black, r_red) = if let Some(right) = self.right {
-            let rb = right.as_ref();
-            if let Some(rp) = rb.parent {
-                assert_eq!(self, rp.as_ref());
+                children += rb.children + 1;
+                min_gen = min(min_gen, rb.min_gen);
+                max_gen = max(max_gen, rb.max_gen);
+                (rb.verify(), rb.red)
             } else {
-                unreachable!();
-            }
+                (0, false)
+            };
 
-            assert!(self.hash <= rb.hash);
-            assert!(self < rb);
+            // red nodes cannot have red children
+            assert!(!self.red || !(l_red || r_red));
 
-            children += rb.children + 1;
-            min_gen = min(min_gen, rb.min_gen);
-            max_gen = max(max_gen, rb.max_gen);
-            (rb.verify(), rb.red)
-        } else {
-            (0, false)
-        };
+            assert_eq!(self.min_gen, min_gen);
+            assert_eq!(self.max_gen, max_gen);
+            assert_eq!(self.children, children);
+            assert_eq!(l_black, r_black);
 
-        // red nodes cannot have red children
-        assert!(!self.red || !(l_red || r_red));
-
-        assert_eq!(self.min_gen, min_gen);
-        assert_eq!(self.max_gen, max_gen);
-        assert_eq!(self.children, children);
-        assert_eq!(l_black, r_black);
-
-        if self.red { l_black } else { l_black + 1 }
+            if self.red { l_black } else { l_black + 1 }
+        }
     }
 }
 
@@ -938,9 +950,7 @@ where
                 assert!(rb.parent.is_none());
                 assert!(!rb.red);
 
-                unsafe {
-                    rb.verify();
-                }
+                rb.verify();
             }
         }
     }
