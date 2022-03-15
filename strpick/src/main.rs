@@ -32,6 +32,8 @@ enum Command {
     Dump,
     /// Dump the contents of any valid aw-shuffler database.
     DumpRaw,
+    /// Repair an existing database if rocksdb has corrupted itself.
+    Repair,
 }
 
 fn main() {
@@ -45,6 +47,7 @@ fn main() {
             _ => panic!("Item {} is not string", v),
         }),
         Command::DumpRaw => dump(&opt.db, |v| v.to_string()),
+        Command::Repair => repair(&opt.db),
     }
 }
 
@@ -112,4 +115,11 @@ fn pick(db: &Path, num: usize) {
     }
 
     s.close_leak().unwrap();
+}
+
+fn repair(db: &Path) {
+    let mut options = Options::default();
+    options.set_compression_type(rocksdb::DBCompressionType::Lz4);
+
+    DB::repair(&options, db).unwrap();
 }
