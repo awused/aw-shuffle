@@ -30,9 +30,7 @@ fn random_strings(n: usize) -> Vec<String> {
 fn sequential_strings(n: usize) -> Vec<String> {
     let strlen = n.to_string().len();
 
-    (0..n)
-        .map(|i| format!("{:0strlen$}", i, strlen = strlen))
-        .collect()
+    (0..n).map(|i| format!("{:0strlen$}", i, strlen = strlen)).collect()
 }
 
 fn sequential_inserts(c: &mut Criterion) {

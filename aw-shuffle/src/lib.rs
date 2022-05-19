@@ -95,11 +95,7 @@ pub trait AwShuffler: private::Sealed {
     /// Returns `Ok(None)` when the shuffler is empty.
     fn try_unique_n(&mut self, n: usize) -> Result<Option<Vec<&Self::Item>>, Self::Error> {
         let s = self.size();
-        if s == 0 || s < n {
-            self.next_n(n)
-        } else {
-            self.unique_n(n)
-        }
+        if s == 0 || s < n { self.next_n(n) } else { self.unique_n(n) }
     }
 
     /// Returns the number of items currently in the shuffler.
@@ -180,7 +176,7 @@ impl<T: Item> Shuffler<T> {
     /// `bias` controls how strongly the shuffler biases itself towards less recently selected
     /// items, with larger values more strongly. `bias` must be non-negative and not a NaN value. A
     /// value of 0 means the shuffler ignores how recently selected items were while a value of
-    /// f64::INFINITY will cause it to only return the least-recently selected items. The default
+    /// `f64::INFINITY` will cause it to only return the least-recently selected items. The default
     /// `bias` is 2.0.
     ///
     /// # Panics
@@ -211,7 +207,7 @@ where
     /// `bias` controls how strongly the shuffler biases itself towards less recently selected
     /// items, with larger values more strongly. `bias` must be non-negative and not a NaN value. A
     /// value of 0 means the shuffler ignores how recently selected items were while a value of
-    /// f64::INFINITY will cause it to only return the least-recently selected items. The default
+    /// `f64::INFINITY` will cause it to only return the least-recently selected items. The default
     /// `bias` is 2.0.
     ///
     /// # Panics
@@ -352,10 +348,7 @@ where
         }
 
 
-        let output = selected
-            .into_iter()
-            .map(|n| unsafe { n.as_ref().get() })
-            .collect();
+        let output = selected.into_iter().map(|n| unsafe { n.as_ref().get() }).collect();
 
         Ok(Some(output))
     }
@@ -385,10 +378,7 @@ where
         }
 
 
-        let output = selected
-            .into_iter()
-            .map(|n| unsafe { n.as_ref().get() })
-            .collect();
+        let output = selected.into_iter().map(|n| unsafe { n.as_ref().get() }).collect();
 
         Ok(Some(output))
     }
@@ -567,15 +557,11 @@ mod tests {
 
         let v = shuffler.next_n(3).unwrap().unwrap();
         let expected = vec!["e", "b", "c"];
-        v.into_iter()
-            .zip(expected.iter())
-            .for_each(|(a, b)| assert_eq!(a, b));
+        v.into_iter().zip(expected.iter()).for_each(|(a, b)| assert_eq!(a, b));
 
         let v = shuffler.unique_n(5).unwrap().unwrap();
         // b, c, and e all have the same generation
         let expected = vec!["d", "a", "b", "c", "e"];
-        v.into_iter()
-            .zip(expected.iter())
-            .for_each(|(a, b)| assert_eq!(a, b));
+        v.into_iter().zip(expected.iter()).for_each(|(a, b)| assert_eq!(a, b));
     }
 }

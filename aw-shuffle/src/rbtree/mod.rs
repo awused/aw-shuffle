@@ -27,9 +27,7 @@ pub struct Node<T: Item> {
 
 impl<T: Item> Ord for Node<T> {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.hash
-            .cmp(&other.hash)
-            .then_with(|| self.item.cmp(&other.item))
+        self.hash.cmp(&other.hash).then_with(|| self.item.cmp(&other.item))
     }
 }
 
@@ -69,16 +67,12 @@ enum SoleRedChild<T: Item> {
 
 impl<T: Item> Node<T> {
     #[inline]
-    pub(crate) fn get(&self) -> &T {
+    pub(crate) const fn get(&self) -> &T {
         &self.item
     }
 
     fn other_child(&self, c: &Self) -> &Option<NonNull<Self>> {
-        if self.is_left_child(c) {
-            &self.right
-        } else {
-            &self.left
-        }
+        if self.is_left_child(c) { &self.right } else { &self.left }
     }
 
     fn is_left_child(&self, c: &Self) -> bool {
@@ -300,12 +294,8 @@ where
     T: Item,
     H: Hasher + Clone,
 {
-    pub(crate) fn new(hasher: H) -> Self {
-        Self {
-            root: None,
-            size: 0,
-            hasher,
-        }
+    pub(crate) const fn new(hasher: H) -> Self {
+        Self { root: None, size: 0, hasher }
     }
 
     fn hash(&self, item: &T) -> u64 {
@@ -584,14 +574,10 @@ where
     fn fix_before_delete(&mut self, mut node: NonNull<Node<T>>) {
         while unsafe { node.as_ref() }.parent.is_some() {
             unsafe {
-                let mut p = node
-                    .as_ref()
-                    .parent
-                    .expect("Non-root black node must have parent.");
+                let mut p = node.as_ref().parent.expect("Non-root black node must have parent.");
                 let mut pb = p.as_mut();
-                let mut s = pb
-                    .other_child(node.as_ref())
-                    .expect("Non-root black node must have sibling");
+                let mut s =
+                    pb.other_child(node.as_ref()).expect("Non-root black node must have sibling");
 
                 let mut sb = s.as_mut();
 
@@ -609,14 +595,10 @@ where
             }
 
             unsafe {
-                let mut p = node
-                    .as_ref()
-                    .parent
-                    .expect("Non-root black node must have parent.");
+                let mut p = node.as_ref().parent.expect("Non-root black node must have parent.");
                 let mut pb = p.as_mut();
-                let mut s = pb
-                    .other_child(node.as_ref())
-                    .expect("Non-root black node must have sibling");
+                let mut s =
+                    pb.other_child(node.as_ref()).expect("Non-root black node must have sibling");
 
                 let mut sb = s.as_mut();
 
@@ -662,10 +644,7 @@ where
             // Rotate S onto parent and copy parent's colour, make both its children black.
 
             unsafe {
-                let mut p = node
-                    .as_ref()
-                    .parent
-                    .expect("Non-root black node must have parent.");
+                let mut p = node.as_ref().parent.expect("Non-root black node must have parent.");
                 let mut s = p
                     .as_ref()
                     .other_child(node.as_ref())
@@ -768,9 +747,7 @@ where
     pub fn find_next(&self, index: usize, gen: u64) -> NonNull<Node<T>> {
         assert!(self.size > 0);
         assert!(index < self.size);
-        let root = self
-            .root
-            .expect("Root cannot be None in a tree with size > 0");
+        let root = self.root.expect("Root cannot be None in a tree with size > 0");
 
         match Node::find_above(root, index, gen) {
             Ok(n) => n,
@@ -993,10 +970,7 @@ pub mod tests {
             Self {
                 root: None,
                 size: 0,
-                hasher: DummyHasher {
-                    val: 0,
-                    values: Rc::from(values),
-                },
+                hasher: DummyHasher { val: 0, values: Rc::from(values) },
             }
         }
     }
@@ -1004,9 +978,7 @@ pub mod tests {
     fn sequentual_strings(n: usize) -> Vec<String> {
         let strlen = n.to_string().len();
 
-        (0..n)
-            .map(|i| format!("{:0strlen$}", i, strlen = strlen))
-            .collect()
+        (0..n).map(|i| format!("{:0strlen$}", i, strlen = strlen)).collect()
     }
 
     #[test]
@@ -1035,11 +1007,7 @@ pub mod tests {
     fn test_hasher() {
         // ahash may change output when updated, so this test may fail after updating dependencies
         let hasher = RandomState::with_seeds(100, 200, 300, 400).build_hasher();
-        let mut rb = Rbtree {
-            root: None,
-            size: 0,
-            hasher,
-        };
+        let mut rb = Rbtree { root: None, size: 0, hasher };
 
         assert!(rb.insert(5.to_string(), 0));
         assert!(rb.insert(4.to_string(), 1));
@@ -1049,11 +1017,7 @@ pub mod tests {
         assert_eq!(rb.print(), "(5 0 b (6 2 r  ) (4 1 r  ))");
 
         let hasher = RandomState::with_seeds(400, 300, 200, 100).build_hasher();
-        let mut rb = Rbtree {
-            root: None,
-            size: 0,
-            hasher,
-        };
+        let mut rb = Rbtree { root: None, size: 0, hasher };
 
         assert!(rb.insert(5.to_string(), 0));
         assert!(rb.insert(4.to_string(), 1));
@@ -1125,17 +1089,11 @@ pub mod tests {
         assert!(rb.insert(8.to_string(), 8));
 
         rb.verify();
-        assert_eq!(
-            rb.print(),
-            "(5 5 b (2 2 b (1 1 r  ) (3 3 r  )) (7 7 b (6 6 r  ) (8 8 r  )))"
-        );
+        assert_eq!(rb.print(), "(5 5 b (2 2 b (1 1 r  ) (3 3 r  )) (7 7 b (6 6 r  ) (8 8 r  )))");
 
         rb.reset();
         rb.verify();
-        assert_eq!(
-            rb.print(),
-            "(5 0 b (2 0 b (1 0 r  ) (3 0 r  )) (7 0 b (6 0 r  ) (8 0 r  )))"
-        );
+        assert_eq!(rb.print(), "(5 0 b (2 0 b (1 0 r  ) (3 0 r  )) (7 0 b (6 0 r  ) (8 0 r  )))");
     }
 
 
@@ -1151,10 +1109,7 @@ pub mod tests {
         assert!(rb.insert(8.to_string(), 8));
 
         assert_eq!(rb.delete(&"5".to_string()), Some(("5".to_string(), 0)));
-        assert_eq!(
-            rb.print(),
-            "(6 6 b (2 2 b (1 1 r  ) (3 3 r  )) (7 7 b  (8 8 r  )))"
-        );
+        assert_eq!(rb.print(), "(6 6 b (2 2 b (1 1 r  ) (3 3 r  )) (7 7 b  (8 8 r  )))");
         rb.verify();
 
         assert_eq!(rb.delete(&"6".to_string()), Some(("6".to_string(), 0)));
@@ -1200,10 +1155,7 @@ pub mod tests {
         assert!(rb.insert(5.to_string(), 0));
         assert!(rb.insert(6.to_string(), 0));
 
-        assert_eq!(
-            rb.print(),
-            "(2 0 b (1 0 b  ) (4 0 r (3 0 b  ) (5 0 b  (6 0 r  ))))"
-        );
+        assert_eq!(rb.print(), "(2 0 b (1 0 b  ) (4 0 r (3 0 b  ) (5 0 b  (6 0 r  ))))");
         rb.verify();
 
         assert_eq!(rb.delete(&"1".to_string()), Some(("1".to_string(), 0)));
@@ -1218,10 +1170,7 @@ pub mod tests {
         assert!(rb.insert(2.to_string(), 0));
         assert!(rb.insert(1.to_string(), 0));
 
-        assert_eq!(
-            rb.print(),
-            "(5 0 b (3 0 r (2 0 b (1 0 r  ) ) (4 0 b  )) (6 0 b  ))"
-        );
+        assert_eq!(rb.print(), "(5 0 b (3 0 r (2 0 b (1 0 r  ) ) (4 0 b  )) (6 0 b  ))");
 
         rb.verify();
 
@@ -1269,15 +1218,9 @@ pub mod tests {
         assert!(rb.insert(6.to_string(), 6));
         assert!(rb.insert(8.to_string(), 8));
 
-        assert_eq!(
-            rb.print(),
-            "(5 5 b (2 2 b (1 1 r  ) (3 3 r  )) (7 7 b (6 6 r  ) (8 8 r  )))"
-        );
+        assert_eq!(rb.print(), "(5 5 b (2 2 b (1 1 r  ) (3 3 r  )) (7 7 b (6 6 r  ) (8 8 r  )))");
         rb.delete(&"8".to_string());
-        assert_eq!(
-            rb.print(),
-            "(5 5 b (2 2 b (1 1 r  ) (3 3 r  )) (7 7 b (6 6 r  ) ))"
-        );
+        assert_eq!(rb.print(), "(5 5 b (2 2 b (1 1 r  ) (3 3 r  )) (7 7 b (6 6 r  ) ))");
         rb.verify();
 
         rb.delete(&"1".to_string());
@@ -1313,10 +1256,7 @@ pub mod tests {
         assert!(rb.insert(8.to_string(), 8));
 
         rb.delete(&"2".to_string());
-        assert_eq!(
-            rb.print(),
-            "(5 5 b (3 3 b (1 1 r  ) ) (7 7 b (6 6 r  ) (8 8 r  )))"
-        );
+        assert_eq!(rb.print(), "(5 5 b (3 3 b (1 1 r  ) ) (7 7 b (6 6 r  ) (8 8 r  )))");
         rb.verify();
 
         rb.delete(&"3".to_string());
@@ -1404,12 +1344,9 @@ pub mod tests {
     fn find_next() {
         let mut rb = Rbtree::new_dummy([].iter().cloned().collect());
 
-        sequentual_strings(11)
-            .into_iter()
-            .enumerate()
-            .for_each(|(i, s)| {
-                assert!(rb.insert(s, (10 - i).try_into().unwrap()));
-            });
+        sequentual_strings(11).into_iter().enumerate().for_each(|(i, s)| {
+            assert!(rb.insert(s, (10 - i).try_into().unwrap()));
+        });
 
         unsafe {
             assert_eq!((rb.find_next(0, 10).as_ref()).item, "00");
@@ -1431,13 +1368,10 @@ pub mod tests {
     fn find_next_reversed() {
         let mut rb = Rbtree::new_dummy([].iter().cloned().collect());
 
-        sequentual_strings(11)
-            .into_iter()
-            .enumerate()
-            .for_each(|(i, s)| {
-                let g = if i == 0 { 5 } else { i.try_into().unwrap() };
-                assert!(rb.insert(s, g));
-            });
+        sequentual_strings(11).into_iter().enumerate().for_each(|(i, s)| {
+            let g = if i == 0 { 5 } else { i.try_into().unwrap() };
+            assert!(rb.insert(s, g));
+        });
 
         unsafe {
             assert_eq!((rb.find_next(0, 10).as_ref()).item, "00");
@@ -1460,12 +1394,9 @@ pub mod tests {
     fn find_next_invalid() {
         let mut rb = Rbtree::new_dummy([].iter().cloned().collect());
 
-        sequentual_strings(10)
-            .into_iter()
-            .enumerate()
-            .for_each(|(i, s)| {
-                assert!(rb.insert(s, (10 - i).try_into().unwrap()));
-            });
+        sequentual_strings(10).into_iter().enumerate().for_each(|(i, s)| {
+            assert!(rb.insert(s, (10 - i).try_into().unwrap()));
+        });
 
         rb.insert("10".to_string(), 1);
         assert!(
@@ -1486,12 +1417,9 @@ pub mod tests {
     fn values() {
         let mut rb = Rbtree::new_dummy([("07".to_string(), 1)].iter().cloned().collect());
 
-        sequentual_strings(10)
-            .into_iter()
-            .enumerate()
-            .for_each(|(i, s)| {
-                assert!(rb.insert(s, (10 - i).try_into().unwrap()));
-            });
+        sequentual_strings(10).into_iter().enumerate().for_each(|(i, s)| {
+            assert!(rb.insert(s, (10 - i).try_into().unwrap()));
+        });
 
         let expected = sequentual_strings(10);
         let mut v = rb.values();
@@ -1499,9 +1427,7 @@ pub mod tests {
 
         v.sort_unstable();
 
-        v.into_iter()
-            .zip(expected.iter())
-            .for_each(|(a, b)| assert_eq!(a, b));
+        v.into_iter().zip(expected.iter()).for_each(|(a, b)| assert_eq!(a, b));
     }
 
     #[test]

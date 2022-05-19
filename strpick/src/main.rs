@@ -83,11 +83,7 @@ fn print(mut vals: Vec<(String, u64)>) {
     vals.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
 
     let (kw, vw) = vals.iter().fold((0, 0), |(kw, vw), (s, g)| {
-        let gw = if *g == 0 {
-            1
-        } else {
-            (*g as f64).log10() as usize + 1
-        };
+        let gw = if *g == 0 { 1 } else { (*g as f64).log10() as usize + 1 };
         (max(kw, UnicodeWidthStr::width(s.as_str())), max(vw, gw))
     });
 
@@ -101,11 +97,7 @@ fn pick(db: &Path, num: usize) {
     let stdin = io::stdin();
     let strings: Vec<_> = stdin.lock().lines().flatten().collect();
 
-    let strings = if !strings.is_empty() {
-        Some(strings)
-    } else {
-        None
-    };
+    let strings = if !strings.is_empty() { Some(strings) } else { None };
 
     let mut s: Shuffler<String> = Shuffler::new_default(db, strings)
         .unwrap_or_else(|e| panic!("Failed to open the database at {:?}: {}", db, e));
