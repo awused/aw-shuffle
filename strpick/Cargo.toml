@@ -12,9 +12,9 @@ repository = "https://github.com/awused/aw-shuffle"
 
 [dependencies]
 aw-shuffle = { path = "../aw-shuffle", features = [ "rocks" ] }
-clap = { version = "3.1.18", features = ["derive"] }
+clap = { version = "3.2.16", features = ["derive"] }
 rmpv = "1.0.0"
-rocksdb = { version = "0.18.0", default-features = false, features = ["lz4"] }
+rocksdb = { version = "0.19.0", default-features = false, features = ["lz4"] }
 tempfile = "3.3.0"
 unicode-width = "0.1.9"
 

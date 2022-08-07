@@ -60,7 +60,7 @@ fn dump<F: Fn(rmpv::Value) -> String>(db: &Path, f: F) {
 
     let mut contents = Vec::new();
 
-    for (key, value) in db.iterator(rocksdb::IteratorMode::Start) {
+    for (key, value) in db.iterator(rocksdb::IteratorMode::Start).flatten() {
         let k = rmpv::decode::value::read_value(&mut key.as_ref()).unwrap();
         let gen = rmpv::decode::value::read_value(&mut value.as_ref()).unwrap();
 

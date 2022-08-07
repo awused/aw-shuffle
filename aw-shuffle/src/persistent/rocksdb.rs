@@ -249,7 +249,12 @@ where
 
         let mut valid: Option<AHashSet<_>> = items.map(|v| v.into_iter().collect());
 
-        for (key, value) in db.iterator(Start) {
+        for r in db.iterator(Start) {
+            let (key, value) = match r {
+                Ok((k, v)) => (k, v),
+                Err(e) => return Err(e.into()),
+            };
+
             // Fallibly deserialize every key and value pair
             let item = match T::deserialize(&mut Deserializer::new(&*key)) {
                 Ok(k) => k,

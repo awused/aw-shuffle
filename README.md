@@ -21,7 +21,7 @@ and fair in practice to a human user.
 # Usage
 
 ```rust
-use aw_shuffle::{Shuffler, AwShuffler};
+use aw_shuffle::{Shuffler, InfallibleShuffler, AwShuffler};
 
 let mut shuffler = Shuffler::default();
 
@@ -32,7 +32,17 @@ items.into_iter().for_each(|i| {
 });
 
 // May be any of the numbers with no weighting, since no items have been selected before.
-let next_number = shuffler.next().unwrap().unwrap();
+let next_number = match shuffler.next() {
+    Ok(Some(num)) => num,
+    Ok(None) => unreachable!(), // This shuffler is definitely non-empty.
+    Err(e) => unreachable!(), // In-memory shufflers are infallible.
+};
+
+// Infallible methods skip the Result step when it is impossible.
+let next_number = match shuffler.inf_next() {
+    Some(num) => num,
+    None => unreachable!(), // This shuffler is definitely non-empty.
+};
 
 // More likely to be one of the four not already selected.
 let second_number = shuffler.next().unwrap().unwrap();
@@ -56,7 +66,7 @@ let next_5_unique_numbers = shuffler.unique_n(5).unwrap().unwrap();
 let try_unique_10 = shuffler.try_unique_n(10).unwrap().unwrap();
 ```
 
-The [InfallibleShuffler] trait offers a more ergnonomic API for in-memory shufflers.
+The [InfallibleShuffler] trait offers a more ergnonomic API for in-memory shufflers that cannot return errors.
 
 ## Persistent Shufflers
 
