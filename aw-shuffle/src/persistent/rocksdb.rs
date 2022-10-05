@@ -55,9 +55,9 @@ impl From<rocksdb::Error> for Error {
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::Serialization(e) => e.fmt(f),
-            Error::Deserialization(e) => e.fmt(f),
-            Error::DB(e) => e.fmt(f),
+            Self::Serialization(e) => e.fmt(f),
+            Self::Deserialization(e) => e.fmt(f),
+            Self::DB(e) => e.fmt(f),
         }
     }
 }
@@ -65,9 +65,9 @@ impl Display for Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         Some(match self {
-            Error::Serialization(e) => e,
-            Error::Deserialization(e) => e,
-            Error::DB(e) => e,
+            Self::Serialization(e) => e,
+            Self::Deserialization(e) => e,
+            Self::DB(e) => e,
         })
     }
 }

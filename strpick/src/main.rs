@@ -6,25 +6,25 @@ use std::{io, usize};
 use aw_shuffle::persistent::rocksdb::Shuffler;
 use aw_shuffle::persistent::PersistentShuffler;
 use aw_shuffle::AwShuffler;
-use clap::StructOpt;
+use clap::{Parser, Subcommand};
 use rocksdb::{Options, DB};
 use tempfile::tempdir;
 use unicode_width::UnicodeWidthStr;
 
-#[derive(clap::StructOpt)]
-#[structopt(name = "strpick", about = "Selects random strings from stdin.")]
+#[derive(clap::Parser)]
+#[command(name = "strpick", about = "Selects random strings from stdin.")]
 struct Opt {
-    #[structopt(long, parse(from_os_str))]
+    #[arg(long, value_parser)]
     /// The RocksDB database used for storing persistent data between runs.
     db: PathBuf,
 
-    #[structopt(subcommand)]
+    #[command(subcommand)]
     cmd: Command,
 }
 
-#[derive(StructOpt)]
+#[derive(Subcommand)]
 enum Command {
-    /// Read strings from stdin and pick \[NUM\] of them, attempting to make them unique.
+    /// Read strings from stdin and pick NUM of them, attempting to make them unique.
     /// If no strings are provided the DB will be read as-is.
     Pick { num: usize },
     /// Dump the current contents of the database to stdout.
@@ -42,9 +42,12 @@ fn main() {
 
     match &opt.cmd {
         Command::Pick { num } => pick(&opt.db, *num),
-        Command::Dump => dump(&opt.db, |v| match v {
-            rmpv::Value::String(s) => s.as_str().unwrap().to_owned(),
-            _ => panic!("Item {} is not string", v),
+        Command::Dump => dump(&opt.db, |v| {
+            if let rmpv::Value::String(s) = v {
+                s.as_str().unwrap().to_owned()
+            } else {
+                panic!("Item {} is not string", v)
+            }
         }),
         Command::DumpRaw => dump(&opt.db, |v| v.to_string()),
         Command::Repair => repair(&opt.db),
@@ -64,11 +67,11 @@ fn dump<F: Fn(rmpv::Value) -> String>(db: &Path, f: F) {
         let k = rmpv::decode::value::read_value(&mut key.as_ref()).unwrap();
         let gen = rmpv::decode::value::read_value(&mut value.as_ref()).unwrap();
 
-        let gen = match gen {
-            rmpv::Value::Integer(g) => g.as_u64().unwrap(),
-            _ => panic!("Generation not integer"),
+        let gen = if let rmpv::Value::Integer(g) = gen {
+            g.as_u64().unwrap()
+        } else {
+            panic!("Generation not integer")
         };
-
 
         contents.push((f(k), gen));
     }
