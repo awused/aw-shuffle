@@ -434,9 +434,9 @@ mod tests {
         }
     }
 
-    fn new_default_leftmost_oldest() -> ShufflerGeneric<String, DummyHasher, DummyRandom> {
+    fn new_default_leftmost_oldest() -> ShufflerGeneric<&'static str, DummyHasher, DummyRandom> {
         ShufflerGeneric {
-            tree: Rbtree::new_dummy([].iter().cloned().collect()),
+            tree: Rbtree::new_dummy(&[]),
             rng: DummyRandom::default(),
             bias: f64::INFINITY,
             new_items: NewItemHandling::NeverSelected,
@@ -542,18 +542,18 @@ mod tests {
     fn leftmost_oldest_fal() {
         let mut shuffler = new_default_leftmost_oldest();
 
-        assert!(shuffler.add("b".to_string()).is_ok());
-        assert!(shuffler.add("c".to_string()).is_ok());
-        assert!(shuffler.add("d".to_string()).is_ok());
-        assert!(shuffler.add("e".to_string()).is_ok());
+        assert!(shuffler.add("b").is_ok());
+        assert!(shuffler.add("c").is_ok());
+        assert!(shuffler.add("d").is_ok());
+        assert!(shuffler.add("e").is_ok());
 
-        assert_eq!(shuffler.next().unwrap().unwrap(), "b");
-        assert_eq!(shuffler.next().unwrap().unwrap(), "c");
-        assert_eq!(shuffler.next().unwrap().unwrap(), "d");
+        assert_eq!(shuffler.next().unwrap().unwrap(), &"b");
+        assert_eq!(shuffler.next().unwrap().unwrap(), &"c");
+        assert_eq!(shuffler.next().unwrap().unwrap(), &"d");
 
-        assert!(shuffler.add("a".to_string()).is_ok());
+        assert!(shuffler.add("a").is_ok());
 
-        assert_eq!(shuffler.next().unwrap().unwrap(), "a");
+        assert_eq!(shuffler.next().unwrap().unwrap(), &"a");
 
         let v = shuffler.next_n(3).unwrap().unwrap();
         let expected = vec!["e", "b", "c"];

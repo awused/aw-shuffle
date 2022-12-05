@@ -948,7 +948,7 @@ pub mod tests {
 
     #[derive(Clone)]
     pub(crate) struct DummyHasher {
-        values: Rc<AHashMap<String, u64>>,
+        values: Rc<AHashMap<&'static str, u64>>,
         val: u64,
     }
 
@@ -965,12 +965,13 @@ pub mod tests {
         }
     }
 
-    impl Rbtree<String, DummyHasher> {
-        pub(crate) fn new_dummy(values: AHashMap<String, u64>) -> Self {
+    impl Rbtree<&'static str, DummyHasher> {
+        pub(crate) fn new_dummy(entries: &[(&'static str, u64)]) -> Self {
+            let hashes: AHashMap<_, _> = entries.iter().copied().collect();
             Self {
                 root: None,
                 size: 0,
-                hasher: DummyHasher { val: 0, values: Rc::from(values) },
+                hasher: DummyHasher { val: 0, values: Rc::from(hashes) },
             }
         }
     }
@@ -983,10 +984,10 @@ pub mod tests {
 
     #[test]
     fn basic_insert() {
-        let mut rb = Rbtree::new_dummy([].iter().cloned().collect());
-        assert!(rb.insert(5.to_string(), 0));
-        assert!(rb.insert(4.to_string(), 1));
-        assert!(rb.insert(6.to_string(), 2));
+        let mut rb = Rbtree::new_dummy(&[]);
+        assert!(rb.insert("5", 0));
+        assert!(rb.insert("4", 1));
+        assert!(rb.insert("6", 2));
 
         rb.verify();
         assert_eq!(rb.print(), "(5 0 b (4 1 r  ) (6 2 r  ))");
@@ -994,10 +995,10 @@ pub mod tests {
 
     #[test]
     fn insert_hasher() {
-        let mut rb = Rbtree::new_dummy([(4.to_string(), 1)].iter().cloned().collect());
-        assert!(rb.insert(5.to_string(), 0));
-        assert!(rb.insert(4.to_string(), 1));
-        assert!(rb.insert(6.to_string(), 2));
+        let mut rb = Rbtree::new_dummy(&[("4", 1)]);
+        assert!(rb.insert("5", 0));
+        assert!(rb.insert("4", 1));
+        assert!(rb.insert("6", 2));
 
         rb.verify();
         assert_eq!(rb.print(), "(6 2 b (5 0 r  ) (4 1 r  ))");
@@ -1009,9 +1010,9 @@ pub mod tests {
         let hasher = RandomState::with_seeds(100, 200, 300, 400).build_hasher();
         let mut rb = Rbtree { root: None, size: 0, hasher };
 
-        assert!(rb.insert(5.to_string(), 0));
-        assert!(rb.insert(4.to_string(), 1));
-        assert!(rb.insert(6.to_string(), 2));
+        assert!(rb.insert("5", 0));
+        assert!(rb.insert("4", 1));
+        assert!(rb.insert("6", 2));
 
         rb.verify();
         assert_eq!(rb.print(), "(5 0 b (6 2 r  ) (4 1 r  ))");
@@ -1019,9 +1020,9 @@ pub mod tests {
         let hasher = RandomState::with_seeds(400, 300, 200, 100).build_hasher();
         let mut rb = Rbtree { root: None, size: 0, hasher };
 
-        assert!(rb.insert(5.to_string(), 0));
-        assert!(rb.insert(4.to_string(), 1));
-        assert!(rb.insert(6.to_string(), 2));
+        assert!(rb.insert("5", 0));
+        assert!(rb.insert("4", 1));
+        assert!(rb.insert("6", 2));
 
         rb.verify();
         assert_eq!(rb.print(), "(5 0 b (4 1 r  ) (6 2 r  ))");
@@ -1029,13 +1030,13 @@ pub mod tests {
 
     #[test]
     fn left_insert() {
-        let mut rb = Rbtree::new_dummy([].iter().cloned().collect());
-        assert!(rb.insert(5.to_string(), 0));
-        assert!(rb.insert(4.to_string(), 1));
-        assert!(rb.insert(3.to_string(), 2));
-        assert!(rb.insert(2.to_string(), 3));
-        assert!(rb.insert(1.to_string(), 4));
-        assert!(!rb.insert(1.to_string(), 50));
+        let mut rb = Rbtree::new_dummy(&[]);
+        assert!(rb.insert("5", 0));
+        assert!(rb.insert("4", 1));
+        assert!(rb.insert("3", 2));
+        assert!(rb.insert("2", 3));
+        assert!(rb.insert("1", 4));
+        assert!(!rb.insert("1", 50));
 
         rb.verify();
         assert_eq!(rb.print(), "(4 1 b (2 3 b (1 4 r  ) (3 2 r  )) (5 0 b  ))");
@@ -1043,13 +1044,13 @@ pub mod tests {
 
     #[test]
     fn right_insert() {
-        let mut rb = Rbtree::new_dummy([].iter().cloned().collect());
-        assert!(rb.insert(1.to_string(), 0));
-        assert!(rb.insert(2.to_string(), 1));
-        assert!(rb.insert(3.to_string(), 2));
-        assert!(rb.insert(4.to_string(), 3));
-        assert!(rb.insert(5.to_string(), 4));
-        assert!(!rb.insert(5.to_string(), 50));
+        let mut rb = Rbtree::new_dummy(&[]);
+        assert!(rb.insert("1", 0));
+        assert!(rb.insert("2", 1));
+        assert!(rb.insert("3", 2));
+        assert!(rb.insert("4", 3));
+        assert!(rb.insert("5", 4));
+        assert!(!rb.insert("5", 50));
 
         rb.verify();
         assert_eq!(rb.print(), "(2 1 b (1 0 b  ) (4 3 b (3 2 r  ) (5 4 r  )))");
@@ -1057,10 +1058,10 @@ pub mod tests {
 
     #[test]
     fn insert_left_right() {
-        let mut rb = Rbtree::new_dummy([].iter().cloned().collect());
-        assert!(rb.insert(5.to_string(), 0));
-        assert!(rb.insert(2.to_string(), 1));
-        assert!(rb.insert(3.to_string(), 2));
+        let mut rb = Rbtree::new_dummy(&[]);
+        assert!(rb.insert("5", 0));
+        assert!(rb.insert("2", 1));
+        assert!(rb.insert("3", 2));
 
         rb.verify();
         assert_eq!(rb.print(), "(3 2 b (2 1 r  ) (5 0 r  ))");
@@ -1068,10 +1069,10 @@ pub mod tests {
 
     #[test]
     fn insert_right_left() {
-        let mut rb = Rbtree::new_dummy([].iter().cloned().collect());
-        assert!(rb.insert(2.to_string(), 1));
-        assert!(rb.insert(5.to_string(), 0));
-        assert!(rb.insert(3.to_string(), 2));
+        let mut rb = Rbtree::new_dummy(&[]);
+        assert!(rb.insert("2", 1));
+        assert!(rb.insert("5", 0));
+        assert!(rb.insert("3", 2));
 
         rb.verify();
         assert_eq!(rb.print(), "(3 2 b (2 1 r  ) (5 0 r  ))");
@@ -1079,14 +1080,14 @@ pub mod tests {
 
     #[test]
     fn reset() {
-        let mut rb = Rbtree::new_dummy([].iter().cloned().collect());
-        assert!(rb.insert(5.to_string(), 5));
-        assert!(rb.insert(2.to_string(), 2));
-        assert!(rb.insert(7.to_string(), 7));
-        assert!(rb.insert(1.to_string(), 1));
-        assert!(rb.insert(3.to_string(), 3));
-        assert!(rb.insert(6.to_string(), 6));
-        assert!(rb.insert(8.to_string(), 8));
+        let mut rb = Rbtree::new_dummy(&[]);
+        assert!(rb.insert("5", 5));
+        assert!(rb.insert("2", 2));
+        assert!(rb.insert("7", 7));
+        assert!(rb.insert("1", 1));
+        assert!(rb.insert("3", 3));
+        assert!(rb.insert("6", 6));
+        assert!(rb.insert("8", 8));
 
         rb.verify();
         assert_eq!(rb.print(), "(5 5 b (2 2 b (1 1 r  ) (3 3 r  )) (7 7 b (6 6 r  ) (8 8 r  )))");
@@ -1099,47 +1100,47 @@ pub mod tests {
 
     #[test]
     fn delete_root() {
-        let mut rb = Rbtree::new_dummy([].iter().cloned().collect());
-        assert!(rb.insert(5.to_string(), 5));
-        assert!(rb.insert(2.to_string(), 2));
-        assert!(rb.insert(7.to_string(), 7));
-        assert!(rb.insert(1.to_string(), 1));
-        assert!(rb.insert(3.to_string(), 3));
-        assert!(rb.insert(6.to_string(), 6));
-        assert!(rb.insert(8.to_string(), 8));
+        let mut rb = Rbtree::new_dummy(&[]);
+        assert!(rb.insert("5", 5));
+        assert!(rb.insert("2", 2));
+        assert!(rb.insert("7", 7));
+        assert!(rb.insert("1", 1));
+        assert!(rb.insert("3", 3));
+        assert!(rb.insert("6", 6));
+        assert!(rb.insert("8", 8));
 
-        assert_eq!(rb.delete(&"5".to_string()), Some(("5".to_string(), 0)));
+        assert_eq!(rb.delete(&"5"), Some(("5", 0)));
         assert_eq!(rb.print(), "(6 6 b (2 2 b (1 1 r  ) (3 3 r  )) (7 7 b  (8 8 r  )))");
         rb.verify();
 
-        assert_eq!(rb.delete(&"6".to_string()), Some(("6".to_string(), 0)));
+        assert_eq!(rb.delete(&"6"), Some(("6", 0)));
         assert_eq!(rb.print(), "(7 7 b (2 2 b (1 1 r  ) (3 3 r  )) (8 8 b  ))");
         rb.verify();
 
         println!("{}", rb.pprint());
-        assert_eq!(rb.delete(&"7".to_string()), Some(("7".to_string(), 0)));
+        assert_eq!(rb.delete(&"7"), Some(("7", 0)));
         println!("{}", rb.pprint());
         assert_eq!(rb.print(), "(2 2 b (1 1 b  ) (8 8 b (3 3 r  ) ))");
         rb.verify();
 
-        assert_eq!(rb.delete(&"2".to_string()), Some(("2".to_string(), 0)));
+        assert_eq!(rb.delete(&"2"), Some(("2", 0)));
         assert_eq!(rb.print(), "(3 3 b (1 1 b  ) (8 8 b  ))");
         rb.verify();
 
-        assert_eq!(rb.delete(&"3".to_string()), Some(("3".to_string(), 0)));
+        assert_eq!(rb.delete(&"3"), Some(("3", 0)));
         assert_eq!(rb.print(), "(8 8 b (1 1 r  ) )");
         rb.verify();
 
-        assert_eq!(rb.delete(&"8".to_string()), Some(("8".to_string(), 0)));
+        assert_eq!(rb.delete(&"8"), Some(("8", 0)));
         assert_eq!(rb.print(), "(1 1 b  )");
         rb.verify();
 
-        assert_eq!(rb.delete(&"1".to_string()), Some(("1".to_string(), 0)));
+        assert_eq!(rb.delete(&"1"), Some(("1", 0)));
         assert_eq!(rb.print(), "");
         rb.verify();
 
-        assert!(rb.insert(2.to_string(), 0));
-        assert_eq!(rb.delete(&"1".to_string()), None);
+        assert!(rb.insert("2", 0));
+        assert_eq!(rb.delete(&"1"), None);
         assert_eq!(rb.print(), "(2 0 b  )");
         rb.verify();
     }
@@ -1147,61 +1148,61 @@ pub mod tests {
 
     #[test]
     fn delete_red_sibling() {
-        let mut rb = Rbtree::new_dummy([].iter().cloned().collect());
-        assert!(rb.insert(1.to_string(), 0));
-        assert!(rb.insert(2.to_string(), 0));
-        assert!(rb.insert(3.to_string(), 0));
-        assert!(rb.insert(4.to_string(), 0));
-        assert!(rb.insert(5.to_string(), 0));
-        assert!(rb.insert(6.to_string(), 0));
+        let mut rb = Rbtree::new_dummy(&[]);
+        assert!(rb.insert("1", 0));
+        assert!(rb.insert("2", 0));
+        assert!(rb.insert("3", 0));
+        assert!(rb.insert("4", 0));
+        assert!(rb.insert("5", 0));
+        assert!(rb.insert("6", 0));
 
         assert_eq!(rb.print(), "(2 0 b (1 0 b  ) (4 0 r (3 0 b  ) (5 0 b  (6 0 r  ))))");
         rb.verify();
 
-        assert_eq!(rb.delete(&"1".to_string()), Some(("1".to_string(), 0)));
+        assert_eq!(rb.delete(&"1"), Some(("1", 0)));
         assert_eq!(rb.print(), "(4 0 b (2 0 b  (3 0 r  )) (5 0 b  (6 0 r  )))");
         rb.verify();
 
-        let mut rb = Rbtree::new_dummy([].iter().cloned().collect());
-        assert!(rb.insert(6.to_string(), 0));
-        assert!(rb.insert(5.to_string(), 0));
-        assert!(rb.insert(4.to_string(), 0));
-        assert!(rb.insert(3.to_string(), 0));
-        assert!(rb.insert(2.to_string(), 0));
-        assert!(rb.insert(1.to_string(), 0));
+        let mut rb = Rbtree::new_dummy(&[]);
+        assert!(rb.insert("6", 0));
+        assert!(rb.insert("5", 0));
+        assert!(rb.insert("4", 0));
+        assert!(rb.insert("3", 0));
+        assert!(rb.insert("2", 0));
+        assert!(rb.insert("1", 0));
 
         assert_eq!(rb.print(), "(5 0 b (3 0 r (2 0 b (1 0 r  ) ) (4 0 b  )) (6 0 b  ))");
 
         rb.verify();
 
-        assert_eq!(rb.delete(&"6".to_string()), Some(("6".to_string(), 0)));
+        assert_eq!(rb.delete(&"6"), Some(("6", 0)));
         assert_eq!(rb.print(), "(3 0 b (2 0 b (1 0 r  ) ) (5 0 b (4 0 r  ) ))");
         rb.verify();
     }
 
     #[test]
     fn delete_sibling_inner_red_child() {
-        let mut rb = Rbtree::new_dummy([].iter().cloned().collect());
-        assert!(rb.insert(1.to_string(), 0));
-        assert!(rb.insert(2.to_string(), 0));
-        assert!(rb.insert(4.to_string(), 0));
-        assert!(rb.insert(3.to_string(), 0));
+        let mut rb = Rbtree::new_dummy(&[]);
+        assert!(rb.insert("1", 0));
+        assert!(rb.insert("2", 0));
+        assert!(rb.insert("4", 0));
+        assert!(rb.insert("3", 0));
 
         assert_eq!(rb.print(), "(2 0 b (1 0 b  ) (4 0 b (3 0 r  ) ))");
 
-        assert_eq!(rb.delete(&"1".to_string()), Some(("1".to_string(), 0)));
+        assert_eq!(rb.delete(&"1"), Some(("1", 0)));
         assert_eq!(rb.print(), "(3 0 b (2 0 b  ) (4 0 b  ))");
         rb.verify();
 
-        let mut rb = Rbtree::new_dummy([].iter().cloned().collect());
-        assert!(rb.insert(4.to_string(), 0));
-        assert!(rb.insert(3.to_string(), 0));
-        assert!(rb.insert(1.to_string(), 0));
-        assert!(rb.insert(2.to_string(), 0));
+        let mut rb = Rbtree::new_dummy(&[]);
+        assert!(rb.insert("4", 0));
+        assert!(rb.insert("3", 0));
+        assert!(rb.insert("1", 0));
+        assert!(rb.insert("2", 0));
 
         assert_eq!(rb.print(), "(3 0 b (1 0 b  (2 0 r  )) (4 0 b  ))");
 
-        assert_eq!(rb.delete(&"4".to_string()), Some(("4".to_string(), 0)));
+        assert_eq!(rb.delete(&"4"), Some(("4", 0)));
         assert_eq!(rb.print(), "(2 0 b (1 0 b  ) (3 0 b  ))");
         rb.verify();
     }
@@ -1209,100 +1210,100 @@ pub mod tests {
 
     #[test]
     fn delete_leaves() {
-        let mut rb = Rbtree::new_dummy([].iter().cloned().collect());
-        assert!(rb.insert(5.to_string(), 5));
-        assert!(rb.insert(2.to_string(), 2));
-        assert!(rb.insert(7.to_string(), 7));
-        assert!(rb.insert(1.to_string(), 1));
-        assert!(rb.insert(3.to_string(), 3));
-        assert!(rb.insert(6.to_string(), 6));
-        assert!(rb.insert(8.to_string(), 8));
+        let mut rb = Rbtree::new_dummy(&[]);
+        assert!(rb.insert("5", 5));
+        assert!(rb.insert("2", 2));
+        assert!(rb.insert("7", 7));
+        assert!(rb.insert("1", 1));
+        assert!(rb.insert("3", 3));
+        assert!(rb.insert("6", 6));
+        assert!(rb.insert("8", 8));
 
         assert_eq!(rb.print(), "(5 5 b (2 2 b (1 1 r  ) (3 3 r  )) (7 7 b (6 6 r  ) (8 8 r  )))");
-        rb.delete(&"8".to_string());
+        rb.delete(&"8");
         assert_eq!(rb.print(), "(5 5 b (2 2 b (1 1 r  ) (3 3 r  )) (7 7 b (6 6 r  ) ))");
         rb.verify();
 
-        rb.delete(&"1".to_string());
+        rb.delete(&"1");
         assert_eq!(rb.print(), "(5 5 b (2 2 b  (3 3 r  )) (7 7 b (6 6 r  ) ))");
         rb.verify();
 
-        rb.delete(&"6".to_string());
+        rb.delete(&"6");
         assert_eq!(rb.print(), "(5 5 b (2 2 b  (3 3 r  )) (7 7 b  ))");
         rb.verify();
 
-        rb.delete(&"3".to_string());
+        rb.delete(&"3");
         assert_eq!(rb.print(), "(5 5 b (2 2 b  ) (7 7 b  ))");
         rb.verify();
 
-        rb.delete(&"2".to_string());
+        rb.delete(&"2");
         assert_eq!(rb.print(), "(5 5 b  (7 7 r  ))");
         rb.verify();
 
-        rb.delete(&"7".to_string());
+        rb.delete(&"7");
         assert_eq!(rb.print(), "(5 5 b  )");
         rb.verify();
     }
 
     #[test]
     fn delete_branches() {
-        let mut rb = Rbtree::new_dummy([].iter().cloned().collect());
-        assert!(rb.insert(5.to_string(), 5));
-        assert!(rb.insert(2.to_string(), 2));
-        assert!(rb.insert(7.to_string(), 7));
-        assert!(rb.insert(1.to_string(), 1));
-        assert!(rb.insert(3.to_string(), 3));
-        assert!(rb.insert(6.to_string(), 6));
-        assert!(rb.insert(8.to_string(), 8));
+        let mut rb = Rbtree::new_dummy(&[]);
+        assert!(rb.insert("5", 5));
+        assert!(rb.insert("2", 2));
+        assert!(rb.insert("7", 7));
+        assert!(rb.insert("1", 1));
+        assert!(rb.insert("3", 3));
+        assert!(rb.insert("6", 6));
+        assert!(rb.insert("8", 8));
 
-        rb.delete(&"2".to_string());
+        rb.delete(&"2");
         assert_eq!(rb.print(), "(5 5 b (3 3 b (1 1 r  ) ) (7 7 b (6 6 r  ) (8 8 r  )))");
         rb.verify();
 
-        rb.delete(&"3".to_string());
+        rb.delete(&"3");
         assert_eq!(rb.print(), "(5 5 b (1 1 b  ) (7 7 b (6 6 r  ) (8 8 r  )))");
         rb.verify();
 
-        rb.delete(&"7".to_string());
+        rb.delete(&"7");
         assert_eq!(rb.print(), "(5 5 b (1 1 b  ) (8 8 b (6 6 r  ) ))");
         rb.verify();
     }
 
     #[test]
     fn delete_unbalance() {
-        let mut rb = Rbtree::new_dummy([].iter().cloned().collect());
-        assert!(rb.insert(5.to_string(), 5));
-        assert!(rb.insert(2.to_string(), 2));
-        assert!(rb.insert(7.to_string(), 7));
-        assert!(rb.insert(1.to_string(), 1));
-        assert!(rb.insert(3.to_string(), 3));
-        assert!(rb.insert(6.to_string(), 6));
-        assert!(rb.insert(8.to_string(), 8));
+        let mut rb = Rbtree::new_dummy(&[]);
+        assert!(rb.insert("5", 5));
+        assert!(rb.insert("2", 2));
+        assert!(rb.insert("7", 7));
+        assert!(rb.insert("1", 1));
+        assert!(rb.insert("3", 3));
+        assert!(rb.insert("6", 6));
+        assert!(rb.insert("8", 8));
 
-        rb.delete(&"2".to_string());
-        rb.delete(&"3".to_string());
-        rb.delete(&"1".to_string());
+        rb.delete(&"2");
+        rb.delete(&"3");
+        rb.delete(&"1");
         assert_eq!(rb.print(), "(7 7 b (5 5 b  (6 6 r  )) (8 8 b  ))");
         rb.verify();
     }
 
     #[test]
     fn delete_noop() {
-        let mut rb = Rbtree::new_dummy([].iter().cloned().collect());
+        let mut rb = Rbtree::new_dummy(&[]);
 
-        assert_eq!(rb.delete(&"23423".to_string()), None);
+        assert_eq!(rb.delete(&"23423"), None);
         assert_eq!(rb.print(), "");
         rb.verify();
 
-        assert!(rb.insert(5.to_string(), 5));
-        assert!(rb.insert(2.to_string(), 2));
-        assert!(rb.insert(7.to_string(), 7));
+        assert!(rb.insert("5", 5));
+        assert!(rb.insert("2", 2));
+        assert!(rb.insert("7", 7));
 
-        assert_eq!(rb.delete(&"8".to_string()), None);
+        assert_eq!(rb.delete(&"8"), None);
         assert_eq!(rb.print(), "(5 5 b (2 2 r  ) (7 7 r  ))");
         rb.verify();
 
-        assert_eq!(rb.delete(&"".to_string()), None);
+        assert_eq!(rb.delete(&""), None);
         assert_eq!(rb.print(), "(5 5 b (2 2 r  ) (7 7 r  ))");
         rb.verify();
     }
@@ -1342,9 +1343,10 @@ pub mod tests {
 
     #[test]
     fn find_next() {
-        let mut rb = Rbtree::new_dummy([].iter().cloned().collect());
+        let strings = sequentual_strings(11);
+        let mut rb = Rbtree::new_dummy(&[]);
 
-        sequentual_strings(11).into_iter().enumerate().for_each(|(i, s)| {
+        strings.iter().enumerate().for_each(|(i, s)| {
             assert!(rb.insert(s, (10 - i).try_into().unwrap()));
         });
 
@@ -1366,9 +1368,10 @@ pub mod tests {
 
     #[test]
     fn find_next_reversed() {
-        let mut rb = Rbtree::new_dummy([].iter().cloned().collect());
+        let strings = sequentual_strings(11);
+        let mut rb = Rbtree::new_dummy(&[]);
 
-        sequentual_strings(11).into_iter().enumerate().for_each(|(i, s)| {
+        strings.iter().enumerate().for_each(|(i, s)| {
             let g = if i == 0 { 5 } else { i.try_into().unwrap() };
             assert!(rb.insert(s, g));
         });
@@ -1392,13 +1395,14 @@ pub mod tests {
     // so any error means the shuffler is irrecoverably corrupt.
     #[test]
     fn find_next_invalid() {
-        let mut rb = Rbtree::new_dummy([].iter().cloned().collect());
+        let strings = sequentual_strings(10);
+        let mut rb = Rbtree::new_dummy(&[]);
 
-        sequentual_strings(10).into_iter().enumerate().for_each(|(i, s)| {
+        strings.iter().enumerate().for_each(|(i, s)| {
             assert!(rb.insert(s, (10 - i).try_into().unwrap()));
         });
 
-        rb.insert("10".to_string(), 1);
+        rb.insert("10", 1);
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
                 rb.find_next(11, 1);
@@ -1415,9 +1419,10 @@ pub mod tests {
 
     #[test]
     fn values() {
-        let mut rb = Rbtree::new_dummy([("07".to_string(), 1)].iter().cloned().collect());
+        let strings = sequentual_strings(10);
+        let mut rb = Rbtree::new_dummy(&[("07", 1)]);
 
-        sequentual_strings(10).into_iter().enumerate().for_each(|(i, s)| {
+        strings.iter().enumerate().for_each(|(i, s)| {
             assert!(rb.insert(s, (10 - i).try_into().unwrap()));
         });
 
@@ -1432,52 +1437,52 @@ pub mod tests {
 
     #[test]
     fn size() {
-        let mut rb = Rbtree::new_dummy([].iter().cloned().collect());
+        let mut rb = Rbtree::new_dummy(&[]);
 
         assert_eq!(rb.size(), 0);
 
-        assert!(rb.insert(5.to_string(), 5));
-        assert!(rb.insert(2.to_string(), 2));
-        assert!(rb.insert(7.to_string(), 7));
+        assert!(rb.insert("5", 5));
+        assert!(rb.insert("2", 2));
+        assert!(rb.insert("7", 7));
 
         assert_eq!(rb.size(), 3);
 
-        rb.delete(&5.to_string());
+        rb.delete(&"5");
 
         assert_eq!(rb.size(), 2);
     }
 
     #[test]
     fn generations() {
-        let mut rb = Rbtree::new_dummy([].iter().cloned().collect());
+        let mut rb = Rbtree::new_dummy(&[]);
 
         assert_eq!(rb.generations(), (0, 0));
 
-        assert!(rb.insert(5.to_string(), 5));
-        assert!(rb.insert(2.to_string(), 2));
-        assert!(rb.insert(7.to_string(), 7));
+        assert!(rb.insert("5", 5));
+        assert!(rb.insert("2", 2));
+        assert!(rb.insert("7", 7));
 
         assert_eq!(rb.generations(), (2, 7));
 
-        rb.delete(&7.to_string());
+        rb.delete(&"7");
 
         assert_eq!(rb.generations(), (2, 5));
 
-        rb.delete(&2.to_string());
+        rb.delete(&"2");
 
         assert_eq!(rb.generations(), (5, 5));
 
-        rb.delete(&5.to_string());
+        rb.delete(&"5");
 
         assert_eq!(rb.generations(), (0, 0));
     }
 
     #[test]
     fn set_generation() {
-        let mut rb = Rbtree::new_dummy([].iter().cloned().collect());
-        assert!(rb.insert(5.to_string(), 5));
-        assert!(rb.insert(2.to_string(), 2));
-        assert!(rb.insert(7.to_string(), 7));
+        let mut rb = Rbtree::new_dummy(&[]);
+        assert!(rb.insert("5", 5));
+        assert!(rb.insert("2", 2));
+        assert!(rb.insert("7", 7));
 
         assert_eq!(rb.print(), "(5 5 b (2 2 r  ) (7 7 r  ))");
         rb.verify();
