@@ -979,7 +979,7 @@ pub mod tests {
     fn sequentual_strings(n: usize) -> Vec<String> {
         let strlen = n.to_string().len();
 
-        (0..n).map(|i| format!("{:0strlen$}", i, strlen = strlen)).collect()
+        (0..n).map(|i| format!("{i:0strlen$}")).collect()
     }
 
     #[test]
