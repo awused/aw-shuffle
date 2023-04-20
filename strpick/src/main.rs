@@ -46,7 +46,7 @@ fn main() {
             if let rmpv::Value::String(s) = v {
                 s.as_str().unwrap().to_owned()
             } else {
-                panic!("Item {} is not string", v)
+                panic!("Item {v} is not string")
             }
         }),
         Command::DumpRaw => dump(&opt.db, |v| v.to_string()),
@@ -92,7 +92,7 @@ fn print(mut vals: Vec<(String, u64)>) {
 
     for (s, g) in vals {
         let padding = " ".repeat(kw - UnicodeWidthStr::width(s.as_str()));
-        println!("{}{} | {2:>3$}", s, padding, g, vw);
+        println!("{s}{padding} | {g:>vw$}");
     }
 }
 
@@ -103,10 +103,10 @@ fn pick(db: &Path, num: usize) {
     let strings = if !strings.is_empty() { Some(strings) } else { None };
 
     let mut s: Shuffler<String> = Shuffler::new_default(db, strings)
-        .unwrap_or_else(|e| panic!("Failed to open the database at {:?}: {}", db, e));
+        .unwrap_or_else(|e| panic!("Failed to open the database at {db:?}: {e}"));
 
     for s in s.try_unique_n(num).unwrap().into_iter().flatten() {
-        println!("{}", s)
+        println!("{s}")
     }
 
     s.close_leak().unwrap();
