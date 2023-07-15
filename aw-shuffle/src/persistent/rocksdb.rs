@@ -75,6 +75,7 @@ impl std::error::Error for Error {
 /// A shuffler backed by RocksDB, where all database operations are completed synchronously.
 ///
 /// See [`PersistentShuffler`] for more documentation.
+#[derive(Debug)]
 pub struct ShufflerGeneric<T: Item, H: Hasher + Clone, R: Rng> {
     internal: ManuallyDrop<BaseShuffler<T, H, R>>,
     db: DB,

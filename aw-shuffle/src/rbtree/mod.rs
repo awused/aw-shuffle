@@ -234,24 +234,30 @@ impl<T: Item> Node<T> {
         }
     }
 
-    // Allow boxed self to avoid moving Self while it is still referenced by NonNulls.
-    #[allow(clippy::boxed_local)]
-    fn destroy_tree(mut node: Box<Self>) {
-        node.parent = None;
+    // UNSAFE -- All existing pointers to node except parent pointers from its children must be
+    // destroyed.
+    unsafe fn destroy_tree(mut node: NonNull<Self>) {
+        let cur = unsafe { node.as_mut() };
+        cur.parent = None;
         unsafe {
-            if let Some(left) = node.left.take() {
-                Self::destroy_tree(Box::from_raw(left.as_ptr()));
+            if let Some(left) = cur.left.take() {
+                Self::destroy_tree(left);
             }
-            if let Some(right) = node.right.take() {
-                Self::destroy_tree(Box::from_raw(right.as_ptr()));
+            if let Some(right) = cur.right.take() {
+                Self::destroy_tree(right);
             }
         }
 
         // By now, all pointers to this node have been destroyed, it's safe to drop and deallocate
         // it when the function returns.
+        unsafe {
+            drop(Box::from_raw(node.as_ptr()));
+        }
     }
 }
 
+// TODO -- it'd be possible to drop the Clone requirement here.
+#[derive(Debug)]
 pub struct Rbtree<T: Item, H: Hasher + Clone> {
     root: Option<NonNull<Node<T>>>,
     size: usize,
@@ -283,12 +289,16 @@ where
 {
     fn drop(&mut self) {
         if let Some(root) = self.root.take() {
-            unsafe { Node::destroy_tree(Box::from_raw(root.as_ptr())) }
+            unsafe { Node::destroy_tree(root) }
         }
     }
 }
 
 
+// c - current
+// p - parent
+// g - grandparent
+// s - sibling
 impl<T, H> Rbtree<T, H>
 where
     T: Item,
@@ -389,7 +399,7 @@ where
         }
 
         loop {
-            let mut pb = unsafe { p.as_mut() };
+            let pb = unsafe { p.as_mut() };
 
             pb.children += 1;
 
@@ -421,95 +431,97 @@ where
 
         self.size -= 1;
 
-        unsafe {
-            let nb = n.as_mut();
-            // Ensure the node has only one child by replacing it with its successor
-            let n = if let (Some(_), Some(right)) = (nb.left, nb.right) {
-                let mut s = right;
-                loop {
-                    let l = match s.as_ref().left {
-                        None => break,
-                        Some(l) => l,
-                    };
-                    s = l;
-                }
+        let nb = unsafe { n.as_mut() };
+        // Ensure the node has only one child by replacing it with its successor
+        let n = if let (Some(_), Some(right)) = (nb.left, nb.right) {
+            let mut s = right;
+            loop {
+                let l = match unsafe { s.as_ref() }.left {
+                    None => break,
+                    Some(l) => l,
+                };
+                s = l;
+            }
 
-                let sb = s.as_mut();
-                // Only item, hash, and gen need to be swapped,
-                // the rest will be recalculated in the next step
-                swap(&mut nb.item, &mut sb.item);
-                swap(&mut nb.hash, &mut sb.hash);
-                swap(&mut nb.gen, &mut sb.gen);
-                s
-            } else {
-                n
-            };
+            let sb = unsafe { s.as_mut() };
+            // Only item, hash, and gen need to be swapped,
+            // the rest will be recalculated in the next step
+            swap(&mut nb.item, &mut sb.item);
+            swap(&mut nb.hash, &mut sb.hash);
+            swap(&mut nb.gen, &mut sb.gen);
+            s
+        } else {
+            n
+        };
 
-            let nb = n.as_ref();
-            let p = nb.parent;
+        let nb = unsafe { n.as_ref() };
+        let p = nb.parent;
 
-            let mut p = match p {
-                None => {
-                    // Deleting the root
-                    match (nb.left, nb.right) {
-                        (None, None) => self.root = None,
-                        (Some(_), Some(_)) => unreachable!(),
-                        (None, Some(mut child)) | (Some(mut child), None) => {
-                            self.root = Some(child);
-                            let mut cb = child.as_mut();
-                            cb.parent = None;
-                            cb.red = false;
-                        }
+        let mut p = match p {
+            None => {
+                // Deleting the root
+                match (nb.left, nb.right) {
+                    (None, None) => self.root = None,
+                    (Some(_), Some(_)) => unreachable!(),
+                    (None, Some(mut child)) | (Some(mut child), None) => {
+                        self.root = Some(child);
+                        let cb = unsafe { child.as_mut() };
+                        cb.parent = None;
+                        cb.red = false;
                     }
-                    // By now there are no pointers to n in the tree and it can be dropped.
-                    let n = Box::from_raw(n.as_ptr());
-
-                    return Some((n.item, n.hash));
-                }
-                Some(p) => p,
-            };
-
-            let (c, c_red) = match (nb.left, nb.right) {
-                (None, None) => (None, false),
-                (None, Some(child)) | (Some(child), None) => (Some(child), child.as_ref().red),
-                (Some(_), Some(_)) => unreachable!(),
-            };
-
-            if nb.red || c_red {
-                if let Some(mut c) = c {
-                    let mut cb = c.as_mut();
-                    cb.red = false;
-                    cb.parent = Some(p);
                 }
 
-                let mut pb = p.as_mut();
-                if pb.is_left_child(nb) {
-                    pb.left = c;
-                } else {
-                    pb.right = c;
-                }
+                // By now there are no other pointers to n and it can be dropped.
+                let n = unsafe { Box::from_raw(n.as_ptr()) };
+
+                return Some((n.item, n.hash));
+            }
+            Some(p) => p,
+        };
+
+        let (c, c_red) = match (nb.left, nb.right) {
+            (None, None) => (None, false),
+            (None, Some(child)) | (Some(child), None) => {
+                (Some(child), unsafe { child.as_ref().red })
+            }
+            (Some(_), Some(_)) => unreachable!(),
+        };
+
+        if nb.red || c_red {
+            if let Some(mut c) = c {
+                let cb = unsafe { c.as_mut() };
+                cb.red = false;
+                cb.parent = Some(p);
+            }
+
+            let pb = unsafe { p.as_mut() };
+            if pb.is_left_child(nb) {
+                pb.left = c;
             } else {
-                self.fix_before_delete(n);
-
-                let nb = n.as_ref();
-                let p = nb.parent;
-                let mut pb = p.expect("Impossible").as_mut();
-
-                if pb.is_left_child(nb) {
-                    pb.left = None;
-                } else {
-                    pb.right = None;
-                }
+                pb.right = c;
             }
+        } else {
+            self.fix_before_delete(n);
 
-            if let Some(p) = n.as_ref().parent {
-                Node::recalc_ancestors(p)
+            let nb = unsafe { n.as_ref() };
+            let p = nb.parent;
+            let pb = unsafe { p.expect("Impossible").as_mut() };
+
+            if pb.is_left_child(nb) {
+                pb.left = None;
+            } else {
+                pb.right = None;
             }
-            // By now there are no pointers to n in the tree and it can be dropped.
-            let n = Box::from_raw(n.as_ptr());
-
-            Some((n.item, n.hash))
         }
+
+        if let Some(p) = unsafe { n.as_ref().parent } {
+            Node::recalc_ancestors(p)
+        }
+
+        // By now there are no other pointers to n and it can be dropped.
+        let n = unsafe { Box::from_raw(n.as_ptr()) };
+
+        Some((n.item, n.hash))
     }
 
     fn fix_after_insert(&mut self, node: NonNull<Node<T>>) {
@@ -522,15 +534,15 @@ where
                 }
 
                 let mut g = pnd.as_ref().parent.expect("Impossible");
-                let mut gb = g.as_mut();
+                let gb = g.as_mut();
 
                 let ps = gb.other_child(pnd.as_ref());
 
 
                 if let Some(mut ps) = ps {
-                    let mut psb = ps.as_mut();
+                    let psb = ps.as_mut();
                     if psb.red {
-                        let mut pb = pnd.as_mut();
+                        let pb = pnd.as_mut();
                         // The parent-sibling is red, so we can continue up the tree
                         pb.red = false;
                         psb.red = false;
@@ -575,11 +587,11 @@ where
         while unsafe { node.as_ref() }.parent.is_some() {
             unsafe {
                 let mut p = node.as_ref().parent.expect("Non-root black node must have parent.");
-                let mut pb = p.as_mut();
+                let pb = p.as_mut();
                 let mut s =
                     pb.other_child(node.as_ref()).expect("Non-root black node must have sibling");
 
-                let mut sb = s.as_mut();
+                let sb = s.as_mut();
 
                 // The sibling is red, make it black and make it into the new parent.
                 if sb.red {
@@ -596,11 +608,11 @@ where
 
             unsafe {
                 let mut p = node.as_ref().parent.expect("Non-root black node must have parent.");
-                let mut pb = p.as_mut();
+                let pb = p.as_mut();
                 let mut s =
                     pb.other_child(node.as_ref()).expect("Non-root black node must have sibling");
 
-                let mut sb = s.as_mut();
+                let sb = s.as_mut();
 
                 if !pb.red && !sb.red && !sb.has_red_child() {
                     // All three nodes are black and the sibling has no red children.
@@ -650,8 +662,8 @@ where
                     .other_child(node.as_ref())
                     .expect("Non-root black node must have sibling");
 
-                let mut pb = p.as_mut();
-                let mut sb = s.as_mut();
+                let pb = p.as_mut();
+                let sb = s.as_mut();
 
                 sb.red = pb.red;
                 pb.red = false;
@@ -676,9 +688,9 @@ where
 
     fn rotate_right(&mut self, mut parent: NonNull<Node<T>>) {
         // Left child becomes the new parent
-        let mut pb = unsafe { parent.as_mut() };
+        let pb = unsafe { parent.as_mut() };
         let mut l = pb.left.expect("Tried to make None child into parent");
-        let mut lb = unsafe { l.as_mut() };
+        let lb = unsafe { l.as_mut() };
 
         pb.left = lb.right.take();
         if let Some(mut p_left) = pb.left {
@@ -690,7 +702,7 @@ where
         pb.parent = Some(l);
 
         if let Some(mut l_parent) = lb.parent {
-            let mut lpb = unsafe { l_parent.as_mut() };
+            let lpb = unsafe { l_parent.as_mut() };
             if lpb.is_left_child(pb) {
                 lpb.left = Some(l);
             } else {
@@ -700,15 +712,15 @@ where
             self.root = Some(l)
         }
 
-        pb.recalculate();
-        lb.recalculate();
+        unsafe { parent.as_mut() }.recalculate();
+        unsafe { l.as_mut() }.recalculate();
     }
 
     fn rotate_left(&mut self, mut parent: NonNull<Node<T>>) {
         // Right child becomes the new parent
-        let mut pb = unsafe { parent.as_mut() };
+        let pb = unsafe { parent.as_mut() };
         let mut r = pb.right.expect("Tried to make None child into parent");
-        let mut rb = unsafe { r.as_mut() };
+        let rb = unsafe { r.as_mut() };
 
         pb.right = rb.left.take();
         if let Some(mut p_right) = pb.right {
@@ -720,7 +732,7 @@ where
         pb.parent = Some(r);
 
         if let Some(mut r_parent) = rb.parent {
-            let mut rpb = unsafe { r_parent.as_mut() };
+            let rpb = unsafe { r_parent.as_mut() };
             if !rpb.is_left_child(pb) {
                 rpb.right = Some(r);
             } else {
@@ -730,8 +742,8 @@ where
             self.root = Some(r)
         }
 
-        pb.recalculate();
-        rb.recalculate();
+        unsafe { parent.as_mut() }.recalculate();
+        unsafe { r.as_mut() }.recalculate();
     }
 
     // Only to be used when the generation would overflow a u64
@@ -976,7 +988,7 @@ pub mod tests {
         }
     }
 
-    fn sequentual_strings(n: usize) -> Vec<String> {
+    fn sequential_strings(n: usize) -> Vec<String> {
         let strlen = n.to_string().len();
 
         (0..n).map(|i| format!("{i:0strlen$}")).collect()
@@ -1007,6 +1019,7 @@ pub mod tests {
     #[test]
     fn test_hasher() {
         // ahash may change output when updated, so this test may fail after updating dependencies
+        // Can also fail in miri due to different hash output, but not UB.
         let hasher = RandomState::with_seeds(100, 200, 300, 400).build_hasher();
         let mut rb = Rbtree { root: None, size: 0, hasher };
 
@@ -1312,7 +1325,9 @@ pub mod tests {
     // properly managed.
     #[test]
     fn fuzz_insert_delete() {
-        let input = sequentual_strings(10000);
+        let input = sequential_strings(10000);
+        // Use a smaller set for miri since it's way too slow with large sets
+        //let input = sequential_strings(100);
 
         let mut rng = rand::thread_rng();
         for _ in 1..10 {
@@ -1343,7 +1358,7 @@ pub mod tests {
 
     #[test]
     fn find_next() {
-        let strings = sequentual_strings(11);
+        let strings = sequential_strings(11);
         let mut rb = Rbtree::new_dummy(&[]);
 
         strings.iter().enumerate().for_each(|(i, s)| {
@@ -1368,7 +1383,7 @@ pub mod tests {
 
     #[test]
     fn find_next_reversed() {
-        let strings = sequentual_strings(11);
+        let strings = sequential_strings(11);
         let mut rb = Rbtree::new_dummy(&[]);
 
         strings.iter().enumerate().for_each(|(i, s)| {
@@ -1395,7 +1410,7 @@ pub mod tests {
     // so any error means the shuffler is irrecoverably corrupt.
     #[test]
     fn find_next_invalid() {
-        let strings = sequentual_strings(10);
+        let strings = sequential_strings(10);
         let mut rb = Rbtree::new_dummy(&[]);
 
         strings.iter().enumerate().for_each(|(i, s)| {
@@ -1419,14 +1434,14 @@ pub mod tests {
 
     #[test]
     fn values() {
-        let strings = sequentual_strings(10);
+        let strings = sequential_strings(10);
         let mut rb = Rbtree::new_dummy(&[("07", 1)]);
 
         strings.iter().enumerate().for_each(|(i, s)| {
             assert!(rb.insert(s, (10 - i).try_into().unwrap()));
         });
 
-        let expected = sequentual_strings(10);
+        let expected = sequential_strings(10);
         let mut v = rb.values();
         assert_eq!(v.len(), expected.len());
 

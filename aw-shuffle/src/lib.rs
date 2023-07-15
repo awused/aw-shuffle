@@ -132,6 +132,7 @@ mod private {
 }
 
 /// How items should be treated when they're first added to the shuffler.
+#[derive(Debug)]
 pub enum NewItemHandling {
     /// Treat new items as if they had never been selected, making them very likely to be selected
     /// next. Gives new items the same weight as the least recently selected item.
@@ -148,12 +149,14 @@ pub enum NewItemHandling {
 /// selected only lives as long as this struct.
 ///
 /// See the documentation for [`AwShuffler`] and [`InfallibleShuffler`] for more information.
+#[derive(Debug)]
 pub struct ShufflerGeneric<T: Item, H: Hasher + Clone, R: Rng> {
     pub(crate) tree: Rbtree<T, H>,
     rng: R,
     bias: f64,
     new_items: NewItemHandling,
 }
+
 
 /// Type alias for [`ShufflerGeneric`] with the default hasher and rng implementations.
 pub type Shuffler<T> = ShufflerGeneric<T, AHasher, StdRng>;
@@ -183,8 +186,8 @@ impl<T: Item> Shuffler<T> {
     /// Panics if given a negative or NaN bias.
     #[must_use]
     pub fn new(bias: f64, new_item_handling: NewItemHandling) -> Self {
-        assert!(!bias.is_nan(), "bias {} cannot be NaN.", bias);
-        assert!(bias.is_sign_positive(), "bias {} cannot be negative.", bias);
+        assert!(!bias.is_nan(), "bias {bias} cannot be NaN.");
+        assert!(bias.is_sign_positive(), "bias {bias} cannot be negative.");
 
         Self {
             tree: Rbtree::default(),
