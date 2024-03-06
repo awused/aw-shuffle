@@ -135,8 +135,8 @@ impl Options {
     /// Panics if bias is negative or NaN.
     #[must_use]
     pub fn bias(mut self, bias: f64) -> Self {
-        assert!(!bias.is_nan(), "bias {} cannot be NaN.", bias);
-        assert!(bias.is_sign_positive(), "bias {} cannot be negative.", bias);
+        assert!(!bias.is_nan(), "bias {bias} cannot be NaN.");
+        assert!(bias.is_sign_positive(), "bias {bias} cannot be negative.");
         self.bias = bias;
         self
     }

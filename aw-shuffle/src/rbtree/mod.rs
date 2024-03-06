@@ -83,7 +83,7 @@ impl<T: Item> Node<T> {
         }
     }
 
-    fn has_red_child(&self) -> bool {
+    const fn has_red_child(&self) -> bool {
         if let Some(left) = self.left {
             if unsafe { left.as_ref() }.red {
                 return true;
@@ -96,7 +96,7 @@ impl<T: Item> Node<T> {
         false
     }
 
-    fn sole_red_child(&self) -> SoleRedChild<T> {
+    const fn sole_red_child(&self) -> SoleRedChild<T> {
         match (self.left, self.right) {
             (None, None) => SoleRedChild::None,
             (None, Some(r)) => {
@@ -358,14 +358,11 @@ where
             right: None,
         };
 
-        let mut c = match self.root {
-            None => {
-                node.red = false;
-                self.size += 1;
-                self.root = Some(unsafe { NonNull::new_unchecked(Box::into_raw(Box::from(node))) });
-                return true;
-            }
-            Some(n) => n,
+        let Some(mut c) = self.root else {
+            node.red = false;
+            self.size += 1;
+            self.root = Some(unsafe { NonNull::new_unchecked(Box::into_raw(Box::from(node))) });
+            return true;
         };
 
         let mut p;
@@ -423,11 +420,7 @@ where
     }
 
     pub fn delete(&mut self, item: &T) -> Option<(T, u64)> {
-        let n = self.find_node(item);
-        let mut n = match n {
-            None => return None,
-            Some(n) => n,
-        };
+        let mut n = self.find_node(item)?;
 
         self.size -= 1;
 
@@ -435,11 +428,7 @@ where
         // Ensure the node has only one child by replacing it with its successor
         let n = if let (Some(_), Some(right)) = (nb.left, nb.right) {
             let mut s = right;
-            loop {
-                let l = match unsafe { s.as_ref() }.left {
-                    None => break,
-                    Some(l) => l,
-                };
+            while let Some(l) = unsafe { s.as_ref() }.left {
                 s = l;
             }
 
@@ -457,26 +446,23 @@ where
         let nb = unsafe { n.as_ref() };
         let p = nb.parent;
 
-        let mut p = match p {
-            None => {
-                // Deleting the root
-                match (nb.left, nb.right) {
-                    (None, None) => self.root = None,
-                    (Some(_), Some(_)) => unreachable!(),
-                    (None, Some(mut child)) | (Some(mut child), None) => {
-                        self.root = Some(child);
-                        let cb = unsafe { child.as_mut() };
-                        cb.parent = None;
-                        cb.red = false;
-                    }
+        let Some(mut p) = p else {
+            // Deleting the root
+            match (nb.left, nb.right) {
+                (None, None) => self.root = None,
+                (Some(_), Some(_)) => unreachable!(),
+                (None, Some(mut child)) | (Some(mut child), None) => {
+                    self.root = Some(child);
+                    let cb = unsafe { child.as_mut() };
+                    cb.parent = None;
+                    cb.red = false;
                 }
-
-                // By now there are no other pointers to n and it can be dropped.
-                let n = unsafe { Box::from_raw(n.as_ptr()) };
-
-                return Some((n.item, n.hash));
             }
-            Some(p) => p,
+
+            // By now there are no other pointers to n and it can be dropped.
+            let n = unsafe { Box::from_raw(n.as_ptr()) };
+
+            return Some((n.item, n.hash));
         };
 
         let (c, c_red) = match (nb.left, nb.right) {
@@ -501,11 +487,11 @@ where
                 pb.right = c;
             }
         } else {
-            self.fix_before_delete(n);
+            self.fix_black_node_before_delete(n);
 
             let nb = unsafe { n.as_ref() };
             let p = nb.parent;
-            let pb = unsafe { p.expect("Impossible").as_mut() };
+            let pb = unsafe { p.unwrap().as_mut() };
 
             if pb.is_left_child(nb) {
                 pb.left = None;
@@ -533,7 +519,7 @@ where
                     return;
                 }
 
-                let mut g = pnd.as_ref().parent.expect("Impossible");
+                let mut g = pnd.as_ref().parent.unwrap();
                 let gb = g.as_mut();
 
                 let ps = gb.other_child(pnd.as_ref());
@@ -583,7 +569,7 @@ where
 
     // This is only called when the node to be deleted is a non-root black node, and therefore has
     // a sibling.
-    fn fix_before_delete(&mut self, mut node: NonNull<Node<T>>) {
+    fn fix_black_node_before_delete(&mut self, mut node: NonNull<Node<T>>) {
         while unsafe { node.as_ref() }.parent.is_some() {
             unsafe {
                 let mut p = node.as_ref().parent.expect("Non-root black node must have parent.");
@@ -761,10 +747,9 @@ where
         assert!(index < self.size);
         let root = self.root.expect("Root cannot be None in a tree with size > 0");
 
-        match Node::find_above(root, index, gen) {
-            Ok(n) => n,
-            Err(_) => Node::find_above(root, 0, gen).expect("Corrupt tree"),
-        }
+        Node::find_above(root, index, gen)
+            .or_else(|_| Node::find_above(root, 0, gen))
+            .expect("Corrupt tree")
     }
 
     pub(crate) fn values(&self) -> Vec<&T> {
@@ -787,7 +772,7 @@ where
         out
     }
 
-    pub(crate) fn size(&self) -> usize {
+    pub(crate) const fn size(&self) -> usize {
         if let Some(root) = &self.root {
             unsafe { root.as_ref().children + 1 }
         } else {
@@ -795,7 +780,7 @@ where
         }
     }
 
-    pub(crate) fn generations(&self) -> (u64, u64) {
+    pub(crate) const fn generations(&self) -> (u64, u64) {
         if let Some(root) = self.root {
             let root = unsafe { root.as_ref() };
             (root.min_gen, root.max_gen)
@@ -826,8 +811,8 @@ where
         let c = if self.red { "red" } else { "black" };
 
         format!(
-            "{}{}{}: {} [{},{}], {}\n{}",
-            left, prefix, self.item, self.gen, self.min_gen, self.max_gen, c, right
+            "{left}{prefix}{}: {} [{},{}], {c}\n{right}",
+            self.item, self.gen, self.min_gen, self.max_gen
         )
     }
 
@@ -846,7 +831,7 @@ where
 
         let c = if self.red { "r" } else { "b" };
 
-        format!("({} {} {} {} {})", self.item, self.gen, c, left, right)
+        format!("({} {} {c} {left} {right})", self.item, self.gen)
     }
 
     fn verify(&self) -> usize {
@@ -857,11 +842,7 @@ where
         unsafe {
             let (l_black, l_red) = if let Some(left) = self.left {
                 let lb = left.as_ref();
-                if let Some(lp) = lb.parent {
-                    assert_eq!(self, lp.as_ref());
-                } else {
-                    unreachable!();
-                }
+                assert_eq!(self, lb.parent.unwrap().as_ref());
 
                 assert!(self.hash >= lb.hash);
                 assert!(self > lb);
@@ -876,11 +857,7 @@ where
 
             let (r_black, r_red) = if let Some(right) = self.right {
                 let rb = right.as_ref();
-                if let Some(rp) = rb.parent {
-                    assert_eq!(self, rp.as_ref());
-                } else {
-                    unreachable!();
-                }
+                assert_eq!(self, rb.parent.unwrap().as_ref());
 
                 assert!(self.hash <= rb.hash);
                 assert!(self < rb);
@@ -1028,7 +1005,7 @@ pub mod tests {
         assert!(rb.insert("6", 2));
 
         rb.verify();
-        assert_eq!(rb.print(), "(5 0 b (6 2 r  ) (4 1 r  ))");
+        assert_eq!(rb.print(), "(4 1 b (5 0 r  ) (6 2 r  ))");
 
         let hasher = RandomState::with_seeds(400, 300, 200, 100).build_hasher();
         let mut rb = Rbtree { root: None, size: 0, hasher };
@@ -1038,7 +1015,7 @@ pub mod tests {
         assert!(rb.insert("6", 2));
 
         rb.verify();
-        assert_eq!(rb.print(), "(5 0 b (4 1 r  ) (6 2 r  ))");
+        assert_eq!(rb.print(), "(6 2 b (4 1 r  ) (5 0 r  ))");
     }
 
     #[test]

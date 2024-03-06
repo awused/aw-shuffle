@@ -218,8 +218,8 @@ where
     #[must_use]
     #[allow(dead_code)]
     fn new_custom(bias: f64, new_item_handling: NewItemHandling, hasher: H, rng: R) -> Self {
-        assert!(!bias.is_nan());
-        assert!(bias.is_sign_positive());
+        assert!(!bias.is_nan(), "bias {bias} cannot be NaN.");
+        assert!(bias.is_sign_positive(), "bias {bias} cannot be negative.");
 
         Self {
             tree: Rbtree::new(hasher),
@@ -264,9 +264,7 @@ where
         let (min_gen, mut max_gen) = self.tree.generations();
         if max_gen == limit.get() {
             max_gen = limit.get() - 1;
-            if min_gen > max_gen {
-                unreachable!()
-            }
+            assert!(max_gen >= min_gen);
         }
         self.random_generation_internal(min_gen, max_gen)
     }
@@ -559,12 +557,12 @@ mod tests {
         assert_eq!(shuffler.next().unwrap().unwrap(), &"a");
 
         let v = shuffler.next_n(3).unwrap().unwrap();
-        let expected = vec!["e", "b", "c"];
+        let expected = ["e", "b", "c"];
         v.into_iter().zip(expected.iter()).for_each(|(a, b)| assert_eq!(a, b));
 
         let v = shuffler.unique_n(5).unwrap().unwrap();
         // b, c, and e all have the same generation
-        let expected = vec!["d", "a", "b", "c", "e"];
+        let expected = ["d", "a", "b", "c", "e"];
         v.into_iter().zip(expected.iter()).for_each(|(a, b)| assert_eq!(a, b));
     }
 }

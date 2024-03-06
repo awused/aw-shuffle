@@ -2,6 +2,7 @@ use std::convert::TryInto;
 use std::time::{Duration, Instant};
 
 use aw_shuffle::_secret_do_not_use::Rbtree;
+use aw_shuffle::{AwShuffler, NewItemHandling, Shuffler};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use rand::distributions::Uniform;
 use rand::prelude::{Distribution, SliceRandom};
@@ -30,7 +31,7 @@ fn random_strings(n: usize) -> Vec<String> {
 fn sequential_strings(n: usize) -> Vec<String> {
     let strlen = n.to_string().len();
 
-    (0..n).map(|i| format!("{:0strlen$}", i, strlen = strlen)).collect()
+    (0..n).map(|i| format!("{i:0strlen$}")).collect()
 }
 
 fn sequential_inserts(c: &mut Criterion) {
@@ -119,7 +120,7 @@ fn insert_random(c: &mut Criterion) {
     }
 }
 fn sequential(c: &mut Criterion) {
-    let mut group = c.benchmark_group("sequential");
+    let mut group = c.benchmark_group("shuffled_insert_delete");
     group.sample_size(10);
     let mut rng = rand::thread_rng();
 
@@ -160,8 +161,7 @@ fn find_next(c: &mut Criterion) {
     let mut rng = rand::thread_rng();
 
     for n in SEQUENTIAL_COUNTS {
-        let strings = sequential_strings(*n);
-        let mut input = strings.clone();
+        let mut input = sequential_strings(*n);
         input.shuffle(&mut rng);
 
         let mut rb = Rbtree::default();
@@ -182,6 +182,22 @@ fn find_next(c: &mut Criterion) {
     }
 }
 
+fn shuffler_next(c: &mut Criterion) {
+    let mut group = c.benchmark_group("shuffler_infallible_next");
+
+    for n in SEQUENTIAL_COUNTS {
+        let mut shuffler = Shuffler::new(2.0, NewItemHandling::NeverSelected);
+        for s in sequential_strings(*n) {
+            let _ignored = shuffler.add(s);
+        }
+
+        group.bench_with_input(BenchmarkId::from_parameter(n), n, |b, _s| {
+            b.iter(|| {
+                let _ignored = shuffler.next();
+            })
+        });
+    }
+}
 
 criterion_group!(
     benches,
@@ -190,5 +206,6 @@ criterion_group!(
     insert_random,
     sequential,
     find_next,
+    shuffler_next,
 );
 criterion_main!(benches);

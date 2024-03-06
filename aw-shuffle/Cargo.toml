@@ -14,11 +14,11 @@ persistent = ["serde", "rmp-serde"]
 rocks = ["persistent", "rocksdb"]
 
 [dependencies]
-ahash = "0.8.3"
+ahash = "0.8.11"
 rand = "0.8.5"
 rmp-serde = { version = "1.1.2", optional = true }
-rocksdb = { version = "0.21.0", default-features = false, features = ["lz4"], optional = true }
-serde = { version = "1.0.188", default-features = false, optional = true }
+rocksdb = { version = "0.22.0", default-features = false, features = ["lz4"], optional = true }
+serde = { version = "1.0.197", default-features = false, optional = true }
 
 [dev-dependencies]
 criterion = "0.5.1"
