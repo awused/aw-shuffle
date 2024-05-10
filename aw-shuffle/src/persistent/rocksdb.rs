@@ -120,6 +120,13 @@ where
         Ok(())
     }
 
+    fn close_into_values(mut self) -> Result<Vec<Self::Item>, Self::Error> {
+        self.closed = true;
+        self.db.flush()?;
+        self.db.cancel_all_background_work(true);
+        Ok(self.into_values())
+    }
+
     fn close_leak(mut self) -> Result<(), Self::Error> {
         self.leak = true;
         self.close()
@@ -197,6 +204,14 @@ where
         self.internal.values()
     }
 
+    fn into_values(mut self) -> Vec<Self::Item> {
+        // SAFETY: We drop self immediately and setting self.leak prevents the drop handler from
+        // attempting to drop self.internal twice.
+        self.leak = true;
+        let internal = unsafe { ManuallyDrop::take(&mut self.internal) };
+        internal.into_values()
+    }
+
     fn dump(&self) -> Vec<(&Self::Item, u64)> {
         self.internal.dump()
     }
@@ -215,8 +230,8 @@ where
         }
         if !self.leak {
             unsafe {
-                // Trivially safe, we're dropping this from within the destructor for the owning
-                // struct.
+                // Safe, we're dropping this from within the destructor for the owning
+                // struct and we set leak in into_values().
                 ManuallyDrop::drop(&mut self.internal);
             }
         }

@@ -98,6 +98,12 @@ where
     /// If this is not called it will be called on drop, but any errors will be lost.
     fn close(self) -> Result<(), Self::Error>;
 
+    /// Cleanly shut down the persistent shuffler and ensure all data is flushed to disk, but
+    /// also return all values in no specific order.
+    ///
+    /// If this is not called it will be called on drop, but any errors will be lost.
+    fn close_into_values(self) -> Result<Vec<Self::Item>, Self::Error>;
+
     /// Cleanly shut down the database connection but leak the in-memory shuffler.
     ///
     /// This can be used to defer cleanup until the process is terminated. It's only useful when

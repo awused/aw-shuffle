@@ -108,6 +108,13 @@ pub trait AwShuffler: private::Sealed {
     /// information.
     fn values(&self) -> Vec<&Self::Item>;
 
+    /// Consumes the shuffler and returns all the items in no specific order.
+    ///
+    /// For [`PersistentShuffler`](persistent::PersistentShuffler)s this only counts the items
+    /// currently loaded in memory. See the documentation for persistent shufflers for more
+    /// information.
+    fn into_values(self) -> Vec<Self::Item>;
+
     /// Returns all of the values currently in the shuffler and their generations in no specific
     /// order.
     ///
@@ -390,6 +397,10 @@ where
 
     fn values(&self) -> Vec<&Self::Item> {
         self.tree.values()
+    }
+
+    fn into_values(self) -> Vec<Self::Item> {
+        self.tree.into_values()
     }
 
     fn dump(&self) -> Vec<(&Self::Item, u64)> {

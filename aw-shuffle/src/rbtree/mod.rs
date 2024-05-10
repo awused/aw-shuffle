@@ -254,6 +254,28 @@ impl<T: Item> Node<T> {
             drop(Box::from_raw(node.as_ptr()));
         }
     }
+
+    // UNSAFE -- All existing pointers to node except parent pointers from its children must be
+    // destroyed.
+    unsafe fn into_values(mut node: NonNull<Self>, vals: &mut Vec<T>) {
+        let cur = unsafe { node.as_mut() };
+        cur.parent = None;
+        unsafe {
+            if let Some(left) = cur.left.take() {
+                Self::into_values(left, vals);
+            }
+            if let Some(right) = cur.right.take() {
+                Self::into_values(right, vals);
+            }
+        }
+
+        // By now, all pointers to this node have been destroyed, it's safe to drop and deallocate
+        // it when the function returns.
+        unsafe {
+            let node = Box::from_raw(node.as_ptr());
+            vals.push(node.item);
+        }
+    }
 }
 
 // TODO -- it'd be possible to drop the Clone requirement here.
@@ -315,10 +337,7 @@ where
     }
 
     pub(crate) fn find_node(&self, item: &T) -> Option<NonNull<Node<T>>> {
-        let mut n = match self.root {
-            None => return None,
-            Some(r) => r,
-        };
+        let mut n = self.root?;
 
         let h = self.hash(item);
 
@@ -330,10 +349,7 @@ where
                 Ordering::Greater => nb.right,
             };
 
-            n = match next {
-                None => return None,
-                Some(n) => n,
-            };
+            n = next?;
         }
 
         Some(n)
@@ -757,6 +773,18 @@ where
 
         if let Some(root) = &self.root {
             unsafe { root.as_ref().values(&mut out) };
+        }
+
+        out
+    }
+
+    pub(crate) fn into_values(mut self) -> Vec<T> {
+        let mut out = Vec::with_capacity(self.size);
+
+        // It's safe to take() self.root as self will immediately be dropped, which does not care
+        // about size being stale.
+        if let Some(root) = self.root.take() {
+            unsafe { Node::into_values(root, &mut out) };
         }
 
         out
@@ -1304,7 +1332,7 @@ pub mod tests {
     fn fuzz_insert_delete() {
         let input = sequential_strings(10000);
         // Use a smaller set for miri since it's way too slow with large sets
-        //let input = sequential_strings(100);
+        // let input = sequential_strings(100);
 
         let mut rng = rand::thread_rng();
         for _ in 1..10 {
@@ -1420,6 +1448,24 @@ pub mod tests {
 
         let expected = sequential_strings(10);
         let mut v = rb.values();
+        assert_eq!(v.len(), expected.len());
+
+        v.sort_unstable();
+
+        v.into_iter().zip(expected.iter()).for_each(|(a, b)| assert_eq!(a, b));
+    }
+
+    #[test]
+    fn into_values() {
+        let strings = sequential_strings(10);
+        let mut rb = Rbtree::new_dummy(&[("07", 1)]);
+
+        strings.iter().enumerate().for_each(|(i, s)| {
+            assert!(rb.insert(s, (10 - i).try_into().unwrap()));
+        });
+
+        let expected = sequential_strings(10);
+        let mut v = rb.into_values();
         assert_eq!(v.len(), expected.len());
 
         v.sort_unstable();
