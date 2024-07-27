@@ -1,7 +1,7 @@
 use std::cmp::max;
+use std::io;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
-use std::{io, usize};
 
 use aw_shuffle::persistent::rocksdb::Shuffler;
 use aw_shuffle::persistent::PersistentShuffler;
@@ -98,7 +98,7 @@ fn print(mut vals: Vec<(String, u64)>) {
 
 fn pick(db: &Path, num: usize) {
     let stdin = io::stdin();
-    let strings: Vec<_> = stdin.lock().lines().flatten().collect();
+    let strings: Vec<_> = stdin.lock().lines().map_while(Result::ok).collect();
 
     let strings = if !strings.is_empty() { Some(strings) } else { None };
 

@@ -1,6 +1,7 @@
 #![allow(missing_docs)]
 
 use std::cmp::{max, min, Ordering};
+use std::fmt::Debug;
 use std::hash::{BuildHasher, Hasher};
 use std::mem::swap;
 use std::ptr::NonNull;
@@ -12,7 +13,7 @@ use crate::Item;
 // This was originally written in Go, translated to a version using Rc<RefCell<>>, debugged and
 // fuzzed, then converted into this code.
 
-pub struct Node<T: Item> {
+pub struct Node<T> {
     item: T,
     hash: u64,
     gen: u64,
@@ -25,27 +26,27 @@ pub struct Node<T: Item> {
     right: Option<NonNull<Node<T>>>,
 }
 
-impl<T: Item> Ord for Node<T> {
+impl<T: Ord> Ord for Node<T> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.hash.cmp(&other.hash).then_with(|| self.item.cmp(&other.item))
     }
 }
 
-impl<T: Item> PartialOrd for Node<T> {
+impl<T: Ord> PartialOrd for Node<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl<T: Item> Eq for Node<T> {}
+impl<T: Eq> Eq for Node<T> {}
 
-impl<T: Item> PartialEq for Node<T> {
+impl<T: PartialEq> PartialEq for Node<T> {
     fn eq(&self, other: &Self) -> bool {
         self.hash == other.hash && self.item == other.item
     }
 }
 
-impl<T: Item + std::fmt::Debug> std::fmt::Debug for Node<T> {
+impl<T: Debug> Debug for Node<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Node")
             .field("item", &self.item)
@@ -59,13 +60,13 @@ impl<T: Item + std::fmt::Debug> std::fmt::Debug for Node<T> {
     }
 }
 
-enum SoleRedChild<T: Item> {
+enum SoleRedChild<T> {
     Right(NonNull<Node<T>>),
     Left(NonNull<Node<T>>),
     None,
 }
 
-impl<T: Item> Node<T> {
+impl<T> Node<T> {
     #[inline]
     pub(crate) const fn get(&self) -> &T {
         &self.item
@@ -280,7 +281,7 @@ impl<T: Item> Node<T> {
 
 // TODO -- it'd be possible to drop the Clone requirement here.
 #[derive(Debug)]
-pub struct Rbtree<T: Item, H: Hasher + Clone> {
+pub struct Rbtree<T, H> {
     root: Option<NonNull<Node<T>>>,
     size: usize,
     hasher: H,
@@ -288,13 +289,13 @@ pub struct Rbtree<T: Item, H: Hasher + Clone> {
 
 unsafe impl<T, H> Send for Rbtree<T, H>
 where
-    T: Item + Send,
-    H: Hasher + Clone + Send,
+    T: Send,
+    H: Send,
 {
 }
 // Implementing Sync would likely be safe but functionally probably useless.
 
-impl<T: Item> Default for Rbtree<T, AHasher> {
+impl<T> Default for Rbtree<T, AHasher> {
     fn default() -> Self {
         Self {
             root: None,
@@ -304,11 +305,7 @@ impl<T: Item> Default for Rbtree<T, AHasher> {
     }
 }
 
-impl<T, H> Drop for Rbtree<T, H>
-where
-    T: Item,
-    H: Hasher + Clone,
-{
+impl<T, H> Drop for Rbtree<T, H> {
     fn drop(&mut self) {
         if let Some(root) = self.root.take() {
             unsafe { Node::destroy_tree(root) }
@@ -821,19 +818,19 @@ where
 #[cfg(test)]
 impl<T> Node<T>
 where
-    T: Item + std::fmt::Display + std::fmt::Debug,
+    T: Item + std::fmt::Display + Debug,
 {
     fn pprint(&self, prefix: String) -> String {
         let left = if let Some(left) = self.left {
             unsafe { left.as_ref().pprint(prefix.clone() + "  ") }
         } else {
-            "".to_string()
+            String::new()
         };
 
         let right = if let Some(right) = self.right {
             unsafe { right.as_ref().pprint(prefix.clone() + "  ") }
         } else {
-            "".to_string()
+            String::new()
         };
 
         let c = if self.red { "red" } else { "black" };
@@ -848,13 +845,13 @@ where
         let left = if let Some(left) = self.left {
             unsafe { left.as_ref().print() }
         } else {
-            "".to_string()
+            String::new()
         };
 
         let right = if let Some(right) = self.right {
             unsafe { right.as_ref().print() }
         } else {
-            "".to_string()
+            String::new()
         };
 
         let c = if self.red { "r" } else { "b" };
@@ -914,21 +911,21 @@ where
 #[cfg(test)]
 impl<T, H> Rbtree<T, H>
 where
-    T: Item + std::fmt::Display + std::fmt::Debug,
+    T: Item + std::fmt::Display + Debug,
     H: Hasher + Clone,
 {
     #[allow(dead_code)]
     fn pprint(&self) -> String {
         match self.root {
-            Some(r) => unsafe { r.as_ref().pprint("".into()) },
-            None => "".into(),
+            Some(r) => unsafe { r.as_ref().pprint(String::new()) },
+            None => String::new(),
         }
     }
 
     fn print(&self) -> String {
         match self.root {
             Some(r) => unsafe { r.as_ref().print() },
-            None => "".into(),
+            None => String::new(),
         }
     }
 

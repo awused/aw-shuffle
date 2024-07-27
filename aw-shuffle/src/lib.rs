@@ -157,7 +157,7 @@ pub enum NewItemHandling {
 ///
 /// See the documentation for [`AwShuffler`] and [`InfallibleShuffler`] for more information.
 #[derive(Debug)]
-pub struct ShufflerGeneric<T: Item, H: Hasher + Clone, R: Rng> {
+pub struct ShufflerGeneric<T, H, R> {
     pub(crate) tree: Rbtree<T, H>,
     rng: R,
     bias: f64,
@@ -180,7 +180,7 @@ impl<T: Item> Default for Shuffler<T> {
     }
 }
 
-impl<T: Item> Shuffler<T> {
+impl<T> Shuffler<T> {
     /// Creates a new Shuffler with a given bias and handling behaviour for new items.
     ///
     /// `bias` controls how strongly the shuffler biases itself towards less recently selected

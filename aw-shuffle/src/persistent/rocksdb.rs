@@ -76,7 +76,7 @@ impl std::error::Error for Error {
 ///
 /// See [`PersistentShuffler`] for more documentation.
 #[derive(Debug)]
-pub struct ShufflerGeneric<T: Item, H: Hasher + Clone, R: Rng> {
+pub struct ShufflerGeneric<T, H, R> {
     internal: ManuallyDrop<BaseShuffler<T, H, R>>,
     db: DB,
     closed: bool,
@@ -217,12 +217,7 @@ where
     }
 }
 
-impl<T, H, R> Drop for ShufflerGeneric<T, H, R>
-where
-    T: Item,
-    H: Hasher + Clone,
-    R: Rng,
-{
+impl<T, H, R> Drop for ShufflerGeneric<T, H, R> {
     fn drop(&mut self) {
         if !self.closed {
             drop(self.db.flush());
@@ -245,7 +240,7 @@ where
     H: Hasher + Clone,
     R: Rng,
 {
-    fn get(&mut self, item: &T) -> Result<Option<u64>, Error> {
+    fn get(&self, item: &T) -> Result<Option<u64>, Error> {
         let key = encode::to_vec(item)?;
 
         match self.db.get_pinned(key)? {
