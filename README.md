@@ -1,24 +1,27 @@
 Aw-Shuffle
 ==========
 
-An efficient random shuffler for selecting items, providing weighted randomized selection with
-replacement, favouring less-recently selected items, with optional persistence using RocksDB.
-Supports live insertion and deletion of items.
+An efficient random shuffler for selecting items, providing weighted randomized
+selection with replacement, favouring less-recently selected items, with optional
+persistence using RocksDB. Supports live insertion and deletion of items. It's
+meant for user-facing randomization such as shuffling songs in a media
+player, where it's desirable to bias the selection without completely ruling out
+picking the same item twice in a row.
 
-It's suitable for user-facing randomization such as shuffling songs in a media player, where
-it's desirable to bias the selection without completely ruling out picking the same item twice
-in a row. With a library of a few thousand songs it can take an unreasonably long time to hear
-every song with unbiased randomization. Making a shuffled playlist is an offline algorithm
-that handles new songs poorly: either requiring a full or partial reshuffle when new items are
-added.
+Typical shuffle implementations in media players are complete randomization or
+offline shuffling. With a library of a few thousand songs it can take an
+unreasonably long time to hear every song with unbiased randomization. Making a
+shuffled playlist is an offline algorithm that handles new songs poorly: either
+requiring a full or partial reshuffle when new items are added. This library
+avoids those pitfalls but has its own considerations.
 
-Aw-Shuffle offers `O(log(n))` performance for operations on individual items and `O(n)` memory
-usage while being a fully online algorithm. The algorithm is unsuitable for cryptography and it
-does not make any rigorous claims about its random distribution but its output feels both random
-and fair in practice to a human user.
+Aw-Shuffle offers `O(log(n))` performance for operations on individual items and
+`O(n)` memory usage while being a fully online algorithm that can accept adding
+and removing items at any time. The algorithm is not suitable for cryptography
+and it does not make any rigorous claims about its random distribution but its
+output feels both random and fair in practice to a human user.
 
-
-# Usage
+## Usage
 
 ```rust
 use aw_shuffle::{Shuffler, InfallibleShuffler, AwShuffler};
@@ -58,7 +61,7 @@ let next_10_numbers = shuffler.next_n(10).unwrap().unwrap();
 let next_3_unique_numbers = shuffler.unique_n(3).unwrap().unwrap();
 
 // Every number exactly once. After this, all numbers in the tree have the same generation
-// assigned.
+// assigned since there are only 5 numbers in this example.
 let next_5_unique_numbers = shuffler.unique_n(5).unwrap().unwrap();
 
 // Try to get 10 unique items, which will fail, but fall back to getting 10 non-unique
@@ -66,19 +69,23 @@ let next_5_unique_numbers = shuffler.unique_n(5).unwrap().unwrap();
 let try_unique_10 = shuffler.try_unique_n(10).unwrap().unwrap();
 ```
 
-The [InfallibleShuffler] trait offers a more ergnonomic API for in-memory shufflers that cannot return errors.
+The [InfallibleShuffler] trait offers a more ergnonomic API for in-memory
+shufflers that cannot return errors.
 
 ## Persistent Shufflers
 
-Aw-Shuffler offers optional persistence through the [`PersistentShuffler`](persistent::PersistentShuffler) trait. Currently the only storage backend is RocksDB controlled by the `rocksdb` feature flag.
+Aw-Shuffler offers optional persistence through the
+[`PersistentShuffler`](persistent::PersistentShuffler) trait. Currently the only
+storage backend is RocksDB controlled by the `rocksdb` feature flag.
 
-Use [`close`](persistent::PersistentShuffler::close) to safely close persistent shufflers. If close is not called any errors will be lost on drop.
+Use [`close`](persistent::PersistentShuffler::close) to safely close persistent
+shufflers. If close is not called any errors will be lost on drop.
 
 ## Standalone Executable
 
 The [strpick](https://github.com/awused/aw-shuffle/strpick) directory contains a standalone executable that can be used in shell scripts to select random strings. It reads newline separated strings from stdin and uses a RocksDB database for persistence between runs.
 
-# How It Works
+## How It Works
 
 Builds an in-memory 1-dimensional min/max k-d tree and tracks the recency of each item by assigning each one a generation. Every time an item is selected, it gets assigned a new generation one higher than the previous maximum generation.
 
