@@ -1,6 +1,6 @@
 #![allow(missing_docs)]
 
-use std::cmp::{max, min, Ordering};
+use std::cmp::{Ordering, max, min};
 use std::fmt::Debug;
 use std::hash::{BuildHasher, Hasher};
 use std::mem::swap;
@@ -915,7 +915,7 @@ where
     H: Hasher + Clone,
 {
     #[allow(dead_code)]
-    fn pprint(&self) -> String {
+    pub(super) fn pprint(&self) -> String {
         match self.root {
             Some(r) => unsafe { r.as_ref().pprint(String::new()) },
             None => String::new(),
@@ -951,7 +951,7 @@ where
 pub mod tests {
     use std::convert::TryInto;
     use std::hash::{BuildHasher, Hasher};
-    use std::panic::{catch_unwind, AssertUnwindSafe};
+    use std::panic::{AssertUnwindSafe, catch_unwind};
     use std::rc::Rc;
     use std::str::from_utf8;
 
@@ -1331,7 +1331,7 @@ pub mod tests {
         // Use a smaller set for miri since it's way too slow with large sets
         // let input = sequential_strings(100);
 
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         for _ in 1..10 {
             let mut rb = Rbtree::default();
             let mut shuffled = input.clone();

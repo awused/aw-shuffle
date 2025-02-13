@@ -7,7 +7,7 @@ use std::hash::{Hash, Hasher};
 use std::num::NonZeroU64;
 
 use ahash::AHasher;
-use rand::distributions::Uniform;
+use rand::distr::Uniform;
 use rand::prelude::{Distribution, StdRng};
 use rand::{Rng, SeedableRng};
 use rbtree::{Node, Rbtree};
@@ -173,7 +173,7 @@ impl<T: Item> Default for Shuffler<T> {
     fn default() -> Self {
         Self {
             tree: Rbtree::default(),
-            rng: StdRng::from_entropy(),
+            rng: StdRng::from_os_rng(),
             bias: 2.0,
             new_items: NewItemHandling::NeverSelected,
         }
@@ -198,7 +198,7 @@ impl<T> Shuffler<T> {
 
         Self {
             tree: Rbtree::default(),
-            rng: StdRng::from_entropy(),
+            rng: StdRng::from_os_rng(),
             bias,
             new_items: new_item_handling,
         }
@@ -244,7 +244,7 @@ where
             NewItemHandling::RecentlySelected => max_gen,
             // TODO -- there is an opportunity to cache this range as a Uniform for multiple uses
             // when inserting many values at once.
-            NewItemHandling::Random => self.rng.gen_range(min_gen..=max_gen),
+            NewItemHandling::Random => self.rng.random_range(min_gen..=max_gen),
         }
     }
 
@@ -283,7 +283,7 @@ where
 
         let span = max_gen - min_gen;
         // Generates in the range [0, 1)
-        let biased = self.rng.gen::<f64>().powf(self.bias);
+        let biased = self.rng.random::<f64>().powf(self.bias);
         let mut offset = (span.saturating_add(1) as f64 * biased).floor() as u64;
 
         if offset > span {
@@ -321,7 +321,7 @@ where
         }
 
         let random_gen = self.random_generation();
-        let index = self.rng.gen_range(0..size);
+        let index = self.rng.random_range(0..size);
 
         let node = self.tree.find_next(index, random_gen);
         let (next_gen, _) = self.next_generation();
@@ -337,7 +337,8 @@ where
             return Ok(None);
         }
 
-        let index_range = Uniform::new(0, size);
+        // Won't fail, size > 0
+        let index_range = Uniform::new(0, size).unwrap();
         let mut selected = Vec::with_capacity(n);
 
         let (next_gen, _) = self.next_generation();
@@ -367,7 +368,8 @@ where
             return Ok(None);
         }
 
-        let index_range = Uniform::new(0, size);
+        // Won't fail, size > 0
+        let index_range = Uniform::new(0, size).unwrap();
         let mut selected = Vec::with_capacity(n);
 
         let (next_gen, _) = self.next_generation();
@@ -412,46 +414,25 @@ where
 mod tests {
     use rand::RngCore;
 
-    use crate::rbtree::tests::DummyHasher;
     use crate::rbtree::Rbtree;
     use crate::{AwShuffler, InfallibleShuffler, NewItemHandling, ShufflerGeneric};
 
 
     #[derive(Default)]
-    struct DummyRandom {
-        vals: Vec<u64>,
-        index: usize,
-    }
+    struct AlwaysOldestRnd {}
 
-    impl RngCore for DummyRandom {
+    impl RngCore for AlwaysOldestRnd {
         fn next_u32(&mut self) -> u32 {
-            self.next_u64() as u32
+            // With Lemire's method in rand, returning 0 here will always fail
+            rand::rng().next_u32()
         }
 
         fn next_u64(&mut self) -> u64 {
-            if self.vals.is_empty() {
-                return 0;
-            }
-            let v = self.vals[self.index];
-            self.index = (self.index + 1) % self.vals.len();
-            v
+            0
         }
 
         fn fill_bytes(&mut self, _dest: &mut [u8]) {
             unimplemented!()
-        }
-
-        fn try_fill_bytes(&mut self, _dest: &mut [u8]) -> Result<(), rand::Error> {
-            unimplemented!()
-        }
-    }
-
-    fn new_default_leftmost_oldest() -> ShufflerGeneric<&'static str, DummyHasher, DummyRandom> {
-        ShufflerGeneric {
-            tree: Rbtree::new_dummy(&[]),
-            rng: DummyRandom::default(),
-            bias: f64::INFINITY,
-            new_items: NewItemHandling::NeverSelected,
         }
     }
 
@@ -551,29 +532,43 @@ mod tests {
     }
 
     #[test]
-    fn leftmost_oldest_fal() {
-        let mut shuffler = new_default_leftmost_oldest();
+    fn fuzz_always_oldest() {
+        let mut shuffler = ShufflerGeneric {
+            tree: Rbtree::new_dummy(&[]),
+            rng: AlwaysOldestRnd::default(),
+            bias: f64::INFINITY,
+            new_items: NewItemHandling::NeverSelected,
+        };
 
+        assert!(shuffler.add("a").is_ok());
         assert!(shuffler.add("b").is_ok());
         assert!(shuffler.add("c").is_ok());
         assert!(shuffler.add("d").is_ok());
         assert!(shuffler.add("e").is_ok());
+        assert!(shuffler.add("f").is_ok());
 
-        assert_eq!(shuffler.next().unwrap().unwrap(), &"b");
-        assert_eq!(shuffler.next().unwrap().unwrap(), &"c");
-        assert_eq!(shuffler.next().unwrap().unwrap(), &"d");
+        // Since we're always selecting the oldest ones, we should always get unique elements
+        for _ in 0..100 {
+            let younger = shuffler.next_n(3).unwrap().unwrap();
+            assert_eq!(younger.len(), 3);
+            let younger: Vec<_> = younger.into_iter().copied().collect();
 
-        assert!(shuffler.add("a").is_ok());
+            let older = shuffler.next_n(3).unwrap().unwrap();
+            assert_eq!(older.len(), 3);
 
-        assert_eq!(shuffler.next().unwrap().unwrap(), &"a");
+            for old in older {
+                assert!(!younger.contains(old));
+            }
 
-        let v = shuffler.next_n(3).unwrap().unwrap();
-        let expected = ["e", "b", "c"];
-        v.into_iter().zip(expected.iter()).for_each(|(a, b)| assert_eq!(a, b));
+            let (min_gen, max_gen) = shuffler.tree.generations();
+            assert_eq!(min_gen, max_gen - 1);
 
-        let v = shuffler.unique_n(5).unwrap().unwrap();
-        // b, c, and e all have the same generation
-        let expected = ["d", "a", "b", "c", "e"];
-        v.into_iter().zip(expected.iter()).for_each(|(a, b)| assert_eq!(a, b));
+            // This should force it to select all items and, in doing so, set all generations to
+            // the same value
+            let _unused = shuffler.next_n(6).unwrap().unwrap();
+
+            let (min_gen, max_gen) = shuffler.tree.generations();
+            assert_eq!(min_gen, max_gen);
+        }
     }
 }
