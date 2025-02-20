@@ -3,11 +3,11 @@ use std::io;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
 
-use aw_shuffle::persistent::rocksdb::Shuffler;
-use aw_shuffle::persistent::PersistentShuffler;
 use aw_shuffle::AwShuffler;
+use aw_shuffle::persistent::PersistentShuffler;
+use aw_shuffle::persistent::rocksdb::Shuffler;
 use clap::{Parser, Subcommand};
-use rocksdb::{Options, DB};
+use rocksdb::{DB, Options};
 use tempfile::tempdir;
 use unicode_width::UnicodeWidthStr;
 
@@ -54,7 +54,7 @@ fn main() {
     }
 }
 
-fn dump<F: Fn(rmpv::Value) -> String>(db: &Path, f: F) {
+fn dump<F: Fn(rmpv::Value) -> String>(db: &Path, formatter: F) {
     let tdir = tempdir().unwrap();
     let mut options = Options::default();
     options.set_compression_type(rocksdb::DBCompressionType::Lz4);
@@ -65,15 +65,15 @@ fn dump<F: Fn(rmpv::Value) -> String>(db: &Path, f: F) {
 
     for (key, value) in db.iterator(rocksdb::IteratorMode::Start).flatten() {
         let k = rmpv::decode::value::read_value(&mut key.as_ref()).unwrap();
-        let gen = rmpv::decode::value::read_value(&mut value.as_ref()).unwrap();
+        let g = rmpv::decode::value::read_value(&mut value.as_ref()).unwrap();
 
-        let gen = if let rmpv::Value::Integer(g) = gen {
+        let g = if let rmpv::Value::Integer(g) = g {
             g.as_u64().unwrap()
         } else {
             panic!("Generation not integer")
         };
 
-        contents.push((f(k), gen));
+        contents.push((formatter(k), g));
     }
 
     print(contents);

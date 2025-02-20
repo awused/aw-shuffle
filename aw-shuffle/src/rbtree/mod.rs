@@ -16,7 +16,7 @@ use crate::Item;
 pub struct Node<T> {
     item: T,
     hash: u64,
-    gen: u64,
+    generation: u64,
     red: bool,
     children: usize,
     min_gen: u64,
@@ -51,7 +51,7 @@ impl<T: Debug> Debug for Node<T> {
         f.debug_struct("Node")
             .field("item", &self.item)
             .field("hash", &self.hash)
-            .field("gen", &self.gen)
+            .field("gen", &self.generation)
             .field("red", &self.red)
             .field("children", &self.children)
             .field("min_gen", &self.min_gen)
@@ -124,8 +124,8 @@ impl<T> Node<T> {
 
     fn recalculate(&mut self) {
         self.children = 0;
-        self.max_gen = self.gen;
-        self.min_gen = self.gen;
+        self.max_gen = self.generation;
+        self.min_gen = self.generation;
 
         if let Some(left) = self.left {
             let lb = unsafe { left.as_ref() };
@@ -157,13 +157,13 @@ impl<T> Node<T> {
 
     pub(crate) fn set_generation(mut node: NonNull<Self>, next_gen: u64) {
         let n = unsafe { node.as_mut() };
-        if n.gen != next_gen {
-            n.gen = next_gen;
+        if n.generation != next_gen {
+            n.generation = next_gen;
             Self::recalc_ancestors(node);
         }
     }
 
-    // Finds the first node with index >= i and gen <= g
+    // Finds the first node with index >= i and generation <= g
     fn find_above(node: NonNull<Self>, i: usize, g: u64) -> Result<NonNull<Self>, usize> {
         let nb = unsafe { node.as_ref() };
         if nb.min_gen > g || nb.children + 1 < i {
@@ -179,7 +179,7 @@ impl<T> Node<T> {
             }
         }
 
-        if i <= left_children && nb.gen <= g {
+        if i <= left_children && nb.generation <= g {
             return Ok(node);
         }
 
@@ -213,7 +213,7 @@ impl<T> Node<T> {
                 left.as_ref().dump(vals);
             }
         }
-        vals.push((&self.item, self.gen));
+        vals.push((&self.item, self.generation));
         if let Some(right) = &self.right {
             unsafe {
                 right.as_ref().dump(vals);
@@ -222,7 +222,7 @@ impl<T> Node<T> {
     }
 
     fn reset(&mut self) {
-        self.gen = 0;
+        self.generation = 0;
         self.min_gen = 0;
         self.max_gen = 0;
         unsafe {
@@ -352,20 +352,20 @@ where
         Some(n)
     }
 
-    pub fn insert(&mut self, item: T, gen: u64) -> bool {
+    pub fn insert(&mut self, item: T, generation: u64) -> bool {
         let h = self.hash(&item);
-        self.reinsert(item, h, gen)
+        self.reinsert(item, h, generation)
     }
 
-    pub fn reinsert(&mut self, item: T, hash: u64, gen: u64) -> bool {
+    pub fn reinsert(&mut self, item: T, hash: u64, generation: u64) -> bool {
         let mut node = Node {
             item,
             hash,
-            gen,
+            generation,
             red: true,
             children: 0,
-            min_gen: gen,
-            max_gen: gen,
+            min_gen: generation,
+            max_gen: generation,
             parent: None,
             left: None,
             right: None,
@@ -413,10 +413,10 @@ where
 
             pb.children += 1;
 
-            if gen > pb.max_gen {
-                pb.max_gen = gen;
-            } else if gen < pb.min_gen {
-                pb.min_gen = gen;
+            if generation > pb.max_gen {
+                pb.max_gen = generation;
+            } else if generation < pb.min_gen {
+                pb.min_gen = generation;
             }
 
             let next = pb.parent;
@@ -446,11 +446,11 @@ where
             }
 
             let sb = unsafe { s.as_mut() };
-            // Only item, hash, and gen need to be swapped,
+            // Only item, hash, and generation need to be swapped,
             // the rest will be recalculated in the next step
             swap(&mut nb.item, &mut sb.item);
             swap(&mut nb.hash, &mut sb.hash);
-            swap(&mut nb.gen, &mut sb.gen);
+            swap(&mut nb.generation, &mut sb.generation);
             s
         } else {
             n
@@ -538,7 +538,7 @@ where
                 let ps = gb.other_child(pnd.as_ref());
 
 
-                if let Some(mut ps) = ps {
+                if let &Some(mut ps) = ps {
                     let psb = ps.as_mut();
                     if psb.red {
                         let pb = pnd.as_mut();
@@ -755,13 +755,13 @@ where
     // Finds the next item with a generation <= g after index (inclusive).
     // Wraps around to the start of the tree if one isn't found.
     #[allow(clippy::missing_panics_doc)]
-    pub fn find_next(&self, index: usize, gen: u64) -> NonNull<Node<T>> {
+    pub fn find_next(&self, index: usize, generation: u64) -> NonNull<Node<T>> {
         assert!(self.size > 0);
         assert!(index < self.size);
         let root = self.root.expect("Root cannot be None in a tree with size > 0");
 
-        Node::find_above(root, index, gen)
-            .or_else(|_| Node::find_above(root, 0, gen))
+        Node::find_above(root, index, generation)
+            .or_else(|_| Node::find_above(root, 0, generation))
             .expect("Corrupt tree")
     }
 
@@ -837,7 +837,7 @@ where
 
         format!(
             "{left}{prefix}{}: {} [{},{}], {c}\n{right}",
-            self.item, self.gen, self.min_gen, self.max_gen
+            self.item, self.generation, self.min_gen, self.max_gen
         )
     }
 
@@ -856,12 +856,12 @@ where
 
         let c = if self.red { "r" } else { "b" };
 
-        format!("({} {} {c} {left} {right})", self.item, self.gen)
+        format!("({} {} {c} {left} {right})", self.item, self.generation)
     }
 
     fn verify(&self) -> usize {
-        let mut min_gen = self.gen;
-        let mut max_gen = self.gen;
+        let mut min_gen = self.generation;
+        let mut max_gen = self.generation;
         let mut children = 0;
 
         unsafe {

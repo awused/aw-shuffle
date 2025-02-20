@@ -1,7 +1,7 @@
 [package]
 name = "strpick"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "Simple binary interface for shuffling strings using aw-shuffle and persisting state to a database."
 readme = "../README.md"
 license = "MIT"
@@ -12,9 +12,9 @@ repository = "https://github.com/awused/aw-shuffle"
 
 [dependencies]
 aw-shuffle = { path = "../aw-shuffle", features = [ "rocks" ] }
-clap = { version = "4.5.29", features = ["derive"] }
+clap = { version = "4.5.30", features = ["derive"] }
 rmpv = "1.3.0"
 rocksdb = { version = "0.23.0", default-features = false, features = ["lz4"] }
-tempfile = "3.16.0"
+tempfile = "3.17.1"
 unicode-width = "0.2.0"
 

@@ -6,11 +6,11 @@ use std::mem::ManuallyDrop;
 use std::path::Path;
 
 use ahash::{AHashSet, AHasher};
-use rand::prelude::StdRng;
 use rand::Rng;
-use rmp_serde::{decode, encode, Deserializer};
+use rand::prelude::StdRng;
+use rmp_serde::{Deserializer, decode, encode};
 use rocksdb::IteratorMode::Start;
-use rocksdb::{WriteBatch, DB};
+use rocksdb::{DB, WriteBatch};
 use serde::Deserialize;
 
 use super::{Item, Options, PersistentShuffler};
@@ -99,7 +99,7 @@ where
         }
 
         match self.get(&item)? {
-            Some(gen) => Ok(self.internal.tree.insert(item, gen)),
+            Some(g) => Ok(self.internal.tree.insert(item, g)),
             None => self.add(item),
         }
     }
@@ -143,10 +143,10 @@ where
     type Item = T;
 
     fn add(&mut self, item: Self::Item) -> Result<bool, Self::Error> {
-        let gen = self.internal.add_generation();
+        let g = self.internal.add_generation();
 
-        Self::put_batch(&self.db, &[&item], gen)?;
-        Ok(self.internal.tree.insert(item, gen))
+        Self::put_batch(&self.db, &[&item], g)?;
+        Ok(self.internal.tree.insert(item, g))
     }
 
     fn remove(&mut self, item: &Self::Item) -> Result<Option<Self::Item>, Self::Error> {
@@ -158,40 +158,40 @@ where
     }
 
     fn next(&mut self) -> Result<Option<&Self::Item>, Self::Error> {
-        let (gen, reset) = self.internal.next_generation();
+        let (g, reset) = self.internal.next_generation();
         if reset {
             self.handle_reset()?;
         }
 
         let next = self.internal.inf_next();
         if let Some(next) = next {
-            Self::put_batch(&self.db, &[next], gen.get())?;
+            Self::put_batch(&self.db, &[next], g.get())?;
         }
         Ok(next)
     }
 
     fn next_n(&mut self, n: usize) -> Result<Option<Vec<&Self::Item>>, Self::Error> {
-        let (gen, reset) = self.internal.next_generation();
+        let (g, reset) = self.internal.next_generation();
         if reset {
             self.handle_reset()?;
         }
 
         let next = self.internal.inf_next_n(n);
         if let Some(next) = &next {
-            Self::put_batch(&self.db, next, gen.get())?;
+            Self::put_batch(&self.db, next, g.get())?;
         }
         Ok(next)
     }
 
     fn unique_n(&mut self, n: usize) -> Result<Option<Vec<&Self::Item>>, Self::Error> {
-        let (gen, reset) = self.internal.next_generation();
+        let (g, reset) = self.internal.next_generation();
         if reset {
             self.handle_reset()?;
         }
 
         let next = self.internal.inf_unique_n(n);
         if let Some(next) = &next {
-            Self::put_batch(&self.db, next, gen.get())?;
+            Self::put_batch(&self.db, next, g.get())?;
         }
         Ok(next)
     }
@@ -278,7 +278,7 @@ where
                 }
             };
 
-            let gen = match u64::deserialize(&mut Deserializer::new(&*value)) {
+            let g = match u64::deserialize(&mut Deserializer::new(&*value)) {
                 Ok(g) => g,
                 Err(e) => {
                     if remove_error {
@@ -292,12 +292,12 @@ where
             // Add it to the tree if it's a valid item, otherwise plan to delete it.
             if let Some(valid) = &mut valid {
                 if let Some(item) = valid.take(&item) {
-                    internal.tree.insert(item, gen);
+                    internal.tree.insert(item, g);
                 } else {
                     batch.delete(key);
                 }
             } else {
-                internal.tree.insert(item, gen);
+                internal.tree.insert(item, g);
             }
         }
 
@@ -307,13 +307,13 @@ where
 
         // Add all of the new items to the tree
         for item in valid.into_iter().flatten() {
-            let gen = internal.add_generation();
+            let g = internal.add_generation();
 
             let key = encode::to_vec(&item)?;
-            let value = encode::to_vec(&gen)?;
+            let value = encode::to_vec(&g)?;
             batch.put(key, value);
 
-            internal.tree.insert(item, gen);
+            internal.tree.insert(item, g);
         }
 
         if !batch.is_empty() {
@@ -322,15 +322,15 @@ where
         Ok(())
     }
 
-    fn put_batch(db: &DB, items: &[&T], gen: u64) -> Result<(), Error> {
-        let gen = encode::to_vec(&gen)?;
+    fn put_batch(db: &DB, items: &[&T], generation: u64) -> Result<(), Error> {
+        let g = encode::to_vec(&generation)?;
 
         let mut batch = WriteBatch::default();
 
         for item in items {
             let key = encode::to_vec(*item)?;
 
-            batch.put(key, &gen);
+            batch.put(key, &g);
         }
 
         db.write(batch).map_err(Into::into)

@@ -305,8 +305,8 @@ where
     type Item = T;
 
     fn add(&mut self, item: Self::Item) -> Result<bool, Self::Error> {
-        let gen = self.add_generation();
-        Ok(self.tree.insert(item, gen))
+        let g = self.add_generation();
+        Ok(self.tree.insert(item, g))
     }
 
     fn remove(&mut self, item: &Self::Item) -> Result<Option<Self::Item>, Self::Error> {
