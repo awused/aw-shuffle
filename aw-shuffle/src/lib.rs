@@ -66,7 +66,7 @@ pub trait AwShuffler: private::Sealed {
     fn next(&mut self) -> Result<Option<&Self::Item>, Self::Error>;
 
     /// Returns the next `n` items from the shuffler, weighted based on recency and the configured
-    /// bias. This is not quite equivalent to calling next() `n` times. As `n` grows larger with
+    /// bias. This is not quite equivalent to calling `next()` `n` times. As `n` grows larger with
     /// respect to the number of items being shuffled, this approaches an unweighted random
     /// shuffle.
     ///
@@ -223,8 +223,7 @@ where
     /// # Panics
     /// Panics if given a negative or NaN bias.
     #[must_use]
-    #[allow(dead_code)]
-    fn new_custom(bias: f64, new_item_handling: NewItemHandling, hasher: H, rng: R) -> Self {
+    pub fn new_custom(bias: f64, new_item_handling: NewItemHandling, hasher: H, rng: R) -> Self {
         assert!(!bias.is_nan(), "bias {bias} cannot be NaN.");
         assert!(bias.is_sign_positive(), "bias {bias} cannot be negative.");
 

@@ -1,4 +1,4 @@
-//! Module containing the [`PersistentShuffler`] backed by RocksDB.
+//! Module containing the [`PersistentShuffler`] backed by `RocksDB`.
 
 use std::fmt::Display;
 use std::hash::Hasher;
@@ -72,7 +72,7 @@ impl std::error::Error for Error {
     }
 }
 
-/// A shuffler backed by RocksDB, where all database operations are completed synchronously.
+/// A shuffler backed by `RocksDB`, where all database operations are completed synchronously.
 ///
 /// See [`PersistentShuffler`] for more documentation.
 #[derive(Debug)]
@@ -349,7 +349,7 @@ where
 
 
 impl<T: Item> Shuffler<T> {
-    /// Creates a new [`Shuffler`] pointing to the given RocksDB database with default behaviour.
+    /// Creates a new [`Shuffler`] pointing to the given `RocksDB` database with default behaviour.
     ///
     /// The database will be created if it does not exist, but any missing parent directories will
     /// not be created.
@@ -366,7 +366,7 @@ impl<T: Item> Shuffler<T> {
         Self::new(path, Options::default(), items)
     }
 
-    /// Creates a new [`Shuffler`] pointing to the given RocksDB database.
+    /// Creates a new [`Shuffler`] pointing to the given `RocksDB` database.
     ///
     /// The database will be created if it does not exist, but any missing parent directories will
     /// not be created.

@@ -20,7 +20,7 @@ pub trait InfallibleShuffler: AwShuffler {
     fn inf_next(&mut self) -> Option<&Self::Item>;
 
     /// Returns the next `n` items from the shuffler, weighted based on recency and the configured
-    /// bias. This is not quite equivalent to calling next() `n` times. As `n` grows larger with
+    /// bias. This is not quite equivalent to calling `next()` `n` times. As `n` grows larger with
     /// respect to the number of items being shuffled, this approaches an unweighted random
     /// shuffle.
     ///

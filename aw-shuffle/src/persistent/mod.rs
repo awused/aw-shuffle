@@ -1,7 +1,7 @@
 //! Module containing shufflers that are backed by a persistent database.
 
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use crate::{AwShuffler, NewItemHandling};
 
@@ -25,7 +25,7 @@ pub mod rocksdb;
 ///
 /// # Limitations
 /// The backing database may impose a limit on the serialized size of each item. For
-/// [`rocksdb::Shuffler`] the limit is 8MB, using MessagePack.
+/// [`rocksdb::Shuffler`] the limit is 8MB, using `MessagePack`.
 pub trait Item: super::Item + Serialize + DeserializeOwned {}
 impl<I: super::Item + Serialize + DeserializeOwned> Item for I {}
 
@@ -177,7 +177,7 @@ impl Options {
     /// The default value is `false`.
     ///
     /// Setting this to `true` will cause any items not in the [`items`](rocksdb::Shuffler::new)
-    /// vector to be removed from RocksDB. These unrecognized items are ignored until the database
+    /// vector to be removed from `RocksDB`. These unrecognized items are ignored until the database
     /// is reopened by a new Shuffler instance.
     #[must_use]
     pub const fn keep_unrecognized(mut self, keep_unrecognized: bool) -> Self {

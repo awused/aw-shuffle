@@ -279,7 +279,6 @@ impl<T> Node<T> {
     }
 }
 
-// TODO -- it'd be possible to drop the Clone requirement here.
 #[derive(Debug)]
 pub struct Rbtree<T, H> {
     root: Option<NonNull<Node<T>>>,
@@ -1019,6 +1018,7 @@ pub mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)] // ahash changes under miri
     fn test_hasher() {
         // ahash may change output when updated, so this test may fail after updating dependencies
         // Can also fail in miri due to different hash output, but not UB.
@@ -1327,9 +1327,11 @@ pub mod tests {
     // properly managed.
     #[test]
     fn fuzz_insert_delete() {
-        let input = sequential_strings(10000);
+        #[cfg(not(miri))]
+        let input = sequential_strings(100000);
         // Use a smaller set for miri since it's way too slow with large sets
-        // let input = sequential_strings(100);
+        #[cfg(miri)]
+        let input = sequential_strings(100);
 
         let mut rng = rand::rng();
         for _ in 1..10 {
