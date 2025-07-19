@@ -3,24 +3,26 @@ use std::time::{Duration, Instant};
 
 use aw_shuffle::_secret_do_not_use::Rbtree;
 use aw_shuffle::{AwShuffler, NewItemHandling, Shuffler};
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use rand::distributions::Uniform;
-use rand::prelude::{Distribution, SliceRandom};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use rand::Rng;
+use rand::distr::Uniform;
+use rand::prelude::{Distribution, SliceRandom};
 
 const CHARACTERS: &[u8] =
     b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456790123456789._-...";
 
-static SEQUENTIAL_COUNTS: &[usize] = &[1, 10, 100, 1000, 10000, 50000, 100_000, 500_000, 1_000_000];
+// static SEQUENTIAL_COUNTS: &[usize] = &[1, 10, 100, 1000, 10000, 50000, 100_000, 500_000,
+// 1_000_000];
+static SEQUENTIAL_COUNTS: &[usize] = &[1000, 10000, 100_000, 1_000_000];
 
 fn random_strings(n: usize) -> Vec<String> {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     (0..n)
         .map(|_| {
             (0..50)
                 .map(|_| {
-                    let idx = rng.gen_range(0..CHARACTERS.len());
+                    let idx = rng.random_range(0..CHARACTERS.len());
                     CHARACTERS[idx] as char
                 })
                 .collect()
@@ -65,7 +67,7 @@ fn sequential_inserts(c: &mut Criterion) {
 fn shuffled_inserts(c: &mut Criterion) {
     let mut group = c.benchmark_group("shuffled_inserts");
     group.sample_size(10);
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     for n in SEQUENTIAL_COUNTS {
         let strings = sequential_strings(*n);
@@ -122,7 +124,7 @@ fn insert_random(c: &mut Criterion) {
 fn sequential(c: &mut Criterion) {
     let mut group = c.benchmark_group("shuffled_insert_delete");
     group.sample_size(10);
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     for n in SEQUENTIAL_COUNTS {
         let strings = sequential_strings(*n);
@@ -158,7 +160,7 @@ fn sequential(c: &mut Criterion) {
 
 fn find_next(c: &mut Criterion) {
     let mut group = c.benchmark_group("find_next");
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     for n in SEQUENTIAL_COUNTS {
         let mut input = sequential_strings(*n);
@@ -169,7 +171,7 @@ fn find_next(c: &mut Criterion) {
             rb.insert(s, i.try_into().unwrap());
         });
 
-        let between = Uniform::from(0..*n);
+        let between = Uniform::try_from(0..*n).unwrap();
 
         group.bench_with_input(BenchmarkId::from_parameter(n), n, |b, _s| {
             b.iter(|| {
