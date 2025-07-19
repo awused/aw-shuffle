@@ -322,12 +322,12 @@ where
         let random_gen = self.random_generation();
         let index = self.rng.random_range(0..size);
 
-        let node = self.tree.find_next(index, random_gen);
         let (next_gen, _) = self.next_generation();
+        let node = self.tree.find_next(index, random_gen);
 
-        unsafe { Node::set_generation(node, next_gen.get()) };
+        unsafe { self.tree.set_generation((*node.as_ref()).index(), next_gen.get()) };
 
-        unsafe { Ok(Some(node.as_ref().get())) }
+        unsafe { Ok(Some((*node.as_ref()).get())) }
     }
 
     fn next_n(&mut self, n: usize) -> Result<Option<Vec<&Self::Item>>, Self::Error> {
@@ -350,13 +350,13 @@ where
             let node = self.tree.find_next(index, random_gen);
 
             // Set the generation here to try to prioritize other items.
-            unsafe { Node::set_generation(node, next_gen.get()) };
+            unsafe { self.tree.set_generation((*node.as_ref()).index(), next_gen.get()) };
 
             selected.push(node)
         }
 
 
-        let output = selected.into_iter().map(|n| unsafe { n.as_ref().get() }).collect();
+        let output = selected.into_iter().map(|n| unsafe { (*n.as_ref()).get() }).collect();
 
         Ok(Some(output))
     }
@@ -381,7 +381,7 @@ where
             let node = self.tree.find_next(index, random_gen);
 
             // Set the generation here to try to prioritize other items.
-            unsafe { Node::set_generation(node, next_gen.get()) };
+            unsafe { self.tree.set_generation((*node.as_ref()).index(), next_gen.get()) };
 
             selected.push(node)
         }

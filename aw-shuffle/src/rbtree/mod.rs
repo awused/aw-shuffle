@@ -1,5 +1,6 @@
 #![allow(missing_docs)]
 
+use std::cell::UnsafeCell;
 use std::cmp::{Ordering, max, min};
 use std::fmt::Debug;
 use std::hash::{BuildHasher, Hasher};
@@ -13,17 +14,128 @@ use crate::Item;
 // This was originally written in Go, translated to a version using Rc<RefCell<>>, debugged and
 // fuzzed, then converted into this code.
 
+// Shrink the arena when it is less loaded than this
+const MIN_LOAD_FACTOR: f64 = 0.5;
+
+struct Arena<T> {
+    vec: Vec<UnsafeCell<Node<T>>>,
+}
+
+impl<T> Default for Arena<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> Debug for Arena<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Arena").field("vec_len", &self.vec.len()).finish()
+    }
+}
+
+impl<T> Arena<T> {
+    const fn new() -> Self {
+        Self { vec: Vec::new() }
+    }
+
+    fn alloc(
+        &mut self,
+        item: T,
+        hash: u64,
+        generation: u64,
+        red: bool,
+        parent: Option<usize>,
+    ) -> usize {
+        let index = self.vec.len();
+        let node = UnsafeCell::new(Node {
+            item,
+            hash,
+            generation,
+            red,
+            children: 0,
+            min_gen: generation,
+            max_gen: generation,
+
+            index,
+            parent,
+            left: None,
+            right: None,
+        });
+
+        self.vec.push(node);
+        index
+    }
+
+    // deallocates the node at i
+    // Returns true if the root was moved to position i.
+    // Undefined behaviour if the node is referenced by any other nodes.
+    unsafe fn dealloc(&mut self, i: usize) -> (bool, Node<T>) {
+        let old = self.vec.len() - 1;
+        if i == old {
+            (false, self.vec.pop().unwrap().into_inner())
+        } else {
+            self.vec.swap(i, old);
+            let removed = self.vec.pop().unwrap().into_inner();
+
+            if self.vec.capacity() > 100 {
+                let fill = self.vec.len() as f64 / self.vec.capacity() as f64;
+
+                if fill <= MIN_LOAD_FACTOR {
+                    self.vec.shrink_to_fit();
+                    // let newcap = (self.vec.capacity() as f64 * SHRINK_LOAD_FACTOR).round() as
+                    // usize; self.vec.shrink_to(MIN_LOAD_FACTOR);
+                }
+            }
+
+            unsafe {
+                (*self.vec[i].get()).index = i;
+
+                if let Some(left) = (*self.vec[i].get()).left {
+                    self.vec[left].get_mut().parent = Some(i);
+                }
+                if let Some(right) = (*self.vec[i].get()).right {
+                    self.vec[right].get_mut().parent = Some(i);
+                }
+
+                if let Some(parent) = (*self.vec[i].get()).parent {
+                    let p = self.get_mut(parent);
+
+                    if (*p).is_left_child(old) {
+                        (*p).left = Some(i);
+                    } else {
+                        (*p).right = Some(i);
+                    }
+                    (false, removed)
+                } else {
+                    (true, removed)
+                }
+            }
+        }
+    }
+
+    fn get(&self, i: usize) -> &Node<T> {
+        unsafe { &*self.vec.get_unchecked(i).get() }
+    }
+
+    // Cursed, but safe as long as we never call get_mut twice on the same node
+    unsafe fn get_mut(&self, i: usize) -> &mut Node<T> {
+        unsafe { self.vec.get_unchecked(i).get().as_mut().unwrap() }
+    }
+}
+
 pub struct Node<T> {
-    item: T,
+    pub(crate) item: T,
     hash: u64,
     generation: u64,
     red: bool,
     children: usize,
     min_gen: u64,
     max_gen: u64,
-    parent: Option<NonNull<Node<T>>>,
-    left: Option<NonNull<Node<T>>>,
-    right: Option<NonNull<Node<T>>>,
+
+    pub(crate) index: usize,
+    parent: Option<usize>,
+    left: Option<usize>,
+    right: Option<usize>,
 }
 
 impl<T: Ord> Ord for Node<T> {
@@ -60,9 +172,9 @@ impl<T: Debug> Debug for Node<T> {
     }
 }
 
-enum SoleRedChild<T> {
-    Right(NonNull<Node<T>>),
-    Left(NonNull<Node<T>>),
+enum SoleRedChild {
+    Right(usize),
+    Left(usize),
     None,
 }
 
@@ -72,49 +184,50 @@ impl<T> Node<T> {
         &self.item
     }
 
-    fn other_child(&self, c: &Self) -> &Option<NonNull<Self>> {
-        if self.is_left_child(c) { &self.right } else { &self.left }
+    #[inline]
+    pub(crate) const fn index(&self) -> usize {
+        self.index
     }
 
-    fn is_left_child(&self, c: &Self) -> bool {
-        if let Some(left) = self.left {
-            unsafe { std::ptr::eq(c, left.as_ref()) }
-        } else {
-            false
-        }
+    fn other_child(&self, c: usize) -> Option<usize> {
+        if self.is_left_child(c) { self.right } else { self.left }
     }
 
-    const fn has_red_child(&self) -> bool {
+    fn is_left_child(&self, c: usize) -> bool {
+        if let Some(left) = self.left { c == left } else { false }
+    }
+
+    unsafe fn has_red_child(&self, a: &Arena<T>) -> bool {
         if let Some(left) = self.left {
-            if unsafe { left.as_ref() }.red {
+            if a.get(left).red {
                 return true;
             }
         }
 
         if let Some(right) = self.right {
-            return unsafe { right.as_ref() }.red;
+            return a.get(right).red;
         }
         false
     }
 
-    const fn sole_red_child(&self) -> SoleRedChild<T> {
+    unsafe fn sole_red_child(&self, a: &Arena<T>) -> SoleRedChild {
         match (self.left, self.right) {
             (None, None) => SoleRedChild::None,
             (None, Some(r)) => {
-                if unsafe { r.as_ref() }.red {
+                if a.get(r).red {
                     SoleRedChild::Right(r)
                 } else {
                     SoleRedChild::None
                 }
             }
             (Some(l), None) => {
-                if unsafe { l.as_ref() }.red {
+                if a.get(l).red {
                     SoleRedChild::Left(l)
                 } else {
                     SoleRedChild::None
                 }
             }
-            (Some(l), Some(r)) => match unsafe { (l.as_ref().red, r.as_ref().red) } {
+            (Some(l), Some(r)) => match (a.get(l).red, a.get(r).red) {
                 (true, false) => SoleRedChild::Left(l),
                 (false, true) => SoleRedChild::Right(r),
                 _ => SoleRedChild::None,
@@ -122,13 +235,13 @@ impl<T> Node<T> {
         }
     }
 
-    fn recalculate(&mut self) {
+    unsafe fn recalculate(&mut self, a: &Arena<T>) {
         self.children = 0;
         self.max_gen = self.generation;
         self.min_gen = self.generation;
 
         if let Some(left) = self.left {
-            let lb = unsafe { left.as_ref() };
+            let lb = a.get(left);
 
             self.children += 1 + lb.children;
             self.min_gen = min(self.min_gen, lb.min_gen);
@@ -136,7 +249,7 @@ impl<T> Node<T> {
         }
 
         if let Some(right) = self.right {
-            let rb = unsafe { right.as_ref() };
+            let rb = a.get(right);
 
             self.children += 1 + rb.children;
             self.min_gen = min(self.min_gen, rb.min_gen);
@@ -144,29 +257,31 @@ impl<T> Node<T> {
         }
     }
 
-    fn recalc_ancestors(mut node: NonNull<Self>) {
-        let mut node = unsafe { node.as_mut() };
+    fn recalc_ancestors(node: usize, a: &Arena<T>) {
+        let mut node = node;
         loop {
-            node.recalculate();
-            node = match &mut node.parent {
-                None => break,
-                Some(p) => unsafe { p.as_mut() },
-            };
+            unsafe {
+                let nb = &mut *a.get_mut(node);
+                nb.recalculate(a);
+                node = match nb.parent {
+                    None => break,
+                    Some(p) => p,
+                };
+            }
         }
     }
 
-    // SAFETY: Must have no active references to any nodes
-    pub(crate) unsafe fn set_generation(mut node: NonNull<Self>, next_gen: u64) {
-        let n = unsafe { node.as_mut() };
+    fn set_generation(node: usize, a: &Arena<T>, next_gen: u64) {
+        let n = unsafe { &mut *a.get_mut(node) };
         if n.generation != next_gen {
             n.generation = next_gen;
-            Self::recalc_ancestors(node);
+            Self::recalc_ancestors(node, a);
         }
     }
 
     // Finds the first node with index >= i and generation <= g
-    fn find_above(node: NonNull<Self>, i: usize, g: u64) -> Result<NonNull<Self>, usize> {
-        let nb = unsafe { node.as_ref() };
+    fn find_above(node: usize, a: &Arena<T>, i: usize, g: u64) -> Result<NonNull<Self>, usize> {
+        let nb = a.get(node);
         if nb.min_gen > g || nb.children + 1 < i {
             return Err(nb.children + 1);
         }
@@ -174,18 +289,18 @@ impl<T> Node<T> {
         let mut left_children = 0;
 
         if let Some(left) = nb.left {
-            match Self::find_above(left, i, g) {
+            match Self::find_above(left, a, i, g) {
                 Ok(n) => return Ok(n),
                 Err(lc) => left_children = lc,
             }
         }
 
         if i <= left_children && nb.generation <= g {
-            return Ok(node);
+            return Ok(unsafe { NonNull::new_unchecked(a.vec[node].get()) });
         }
 
         if let Some(right) = nb.right {
-            let right_r = Self::find_above(right, i.saturating_sub(left_children + 1), g);
+            let right_r = Self::find_above(right, a, i.saturating_sub(left_children + 1), g);
             if right_r.is_ok() {
                 return right_r;
             }
@@ -194,95 +309,83 @@ impl<T> Node<T> {
         Err(nb.children + 1)
     }
 
-    fn values<'a>(&'a self, vals: &mut Vec<&'a T>) {
-        if let Some(left) = self.left {
-            unsafe {
-                left.as_ref().values(vals);
-            }
-        }
-        vals.push(&self.item);
-        if let Some(right) = &self.right {
-            unsafe {
-                right.as_ref().values(vals);
-            }
-        }
-    }
-
-    fn dump<'a>(&'a self, vals: &mut Vec<(&'a T, u64)>) {
-        if let Some(left) = self.left {
-            unsafe {
-                left.as_ref().dump(vals);
-            }
-        }
-        vals.push((&self.item, self.generation));
-        if let Some(right) = &self.right {
-            unsafe {
-                right.as_ref().dump(vals);
-            }
-        }
-    }
-
-    fn reset(&mut self) {
-        self.generation = 0;
-        self.min_gen = 0;
-        self.max_gen = 0;
-        unsafe {
-            if let Some(mut left) = self.left {
-                left.as_mut().reset();
-            }
-            if let Some(mut right) = self.right {
-                right.as_mut().reset();
-            }
-        }
-    }
+    // fn values<'a>(&'a self, vals: &mut Vec<&'a T>) {
+    //     if let Some(left) = self.left {
+    //         unsafe {
+    //             left.as_ref().values(vals);
+    //         }
+    //     }
+    //     vals.push(&self.item);
+    //     if let Some(right) = &self.right {
+    //         unsafe {
+    //             right.as_ref().values(vals);
+    //         }
+    //     }
+    // }
+    //
+    // fn dump<'a>(&'a self, vals: &mut Vec<(&'a T, u64)>) {
+    //     if let Some(left) = self.left {
+    //         unsafe {
+    //             left.as_ref().dump(vals);
+    //         }
+    //     }
+    //     vals.push((&self.item, self.generation));
+    //     if let Some(right) = &self.right {
+    //         unsafe {
+    //             right.as_ref().dump(vals);
+    //         }
+    //     }
+    // }
 
     // UNSAFE -- All existing pointers to node except parent pointers from its children must be
     // destroyed.
-    unsafe fn destroy_tree(mut node: NonNull<Self>) {
-        let cur = unsafe { node.as_mut() };
-        cur.parent = None;
-        unsafe {
-            if let Some(left) = cur.left.take() {
-                Self::destroy_tree(left);
-            }
-            if let Some(right) = cur.right.take() {
-                Self::destroy_tree(right);
-            }
-        }
-
-        // By now, all pointers to this node have been destroyed, it's safe to drop and deallocate
-        // it when the function returns.
-        unsafe {
-            drop(Box::from_raw(node.as_ptr()));
-        }
-    }
+    // unsafe fn destroy_tree(mut node: NonNull<Self>) {
+    //     let cur = unsafe { node.as_mut() };
+    //     cur.parent = None;
+    //     unsafe {
+    //         if let Some(left) = cur.left.take() {
+    //             Self::destroy_tree(left);
+    //         }
+    //         if let Some(right) = cur.right.take() {
+    //             Self::destroy_tree(right);
+    //         }
+    //     }
+    //
+    //     // By now, all pointers to this node have been destroyed, it's safe to drop and
+    // deallocate     // it when the function returns.
+    //     unsafe {
+    //         drop(Box::from_raw(node.as_ptr()));
+    //     }
+    // }
 
     // UNSAFE -- All existing pointers to node except parent pointers from its children must be
     // destroyed.
-    unsafe fn into_values(mut node: NonNull<Self>, vals: &mut Vec<T>) {
-        let cur = unsafe { node.as_mut() };
-        cur.parent = None;
-        unsafe {
-            if let Some(left) = cur.left.take() {
-                Self::into_values(left, vals);
-            }
-            if let Some(right) = cur.right.take() {
-                Self::into_values(right, vals);
-            }
-        }
-
-        // By now, all pointers to this node have been destroyed, it's safe to drop and deallocate
-        // it when the function returns.
-        unsafe {
-            let node = Box::from_raw(node.as_ptr());
-            vals.push(node.item);
-        }
-    }
+    // unsafe fn into_values(mut node: NonNull<Self>, vals: &mut Vec<T>) {
+    //     let cur = unsafe { node.as_mut() };
+    //     cur.parent = None;
+    //     unsafe {
+    //         if let Some(left) = cur.left.take() {
+    //             Self::into_values(left, vals);
+    //         }
+    //         if let Some(right) = cur.right.take() {
+    //             Self::into_values(right, vals);
+    //         }
+    //     }
+    //
+    //     // By now, all pointers to this node have been destroyed, it's safe to drop and
+    // deallocate     // it when the function returns.
+    //     unsafe {
+    //         let node = Box::from_raw(node.as_ptr());
+    //         vals.push(node.item);
+    //     }
+    // }
 }
 
 #[derive(Debug)]
 pub struct Rbtree<T, H> {
-    root: Option<NonNull<Node<T>>>,
+    arena: Arena<T>,
+    root: Option<usize>,
+    // TODO -- remove and forward to arena
     size: usize,
     hasher: H,
 }
@@ -298,6 +401,7 @@ where
 impl<T> Default for Rbtree<T, AHasher> {
     fn default() -> Self {
         Self {
+            arena: Arena::default(),
             root: None,
             size: 0,
             hasher: RandomState::new().build_hasher(),
@@ -305,13 +409,13 @@ impl<T> Default for Rbtree<T, AHasher> {
     }
 }
 
-impl<T, H> Drop for Rbtree<T, H> {
-    fn drop(&mut self) {
-        if let Some(root) = self.root.take() {
-            unsafe { Node::destroy_tree(root) }
-        }
-    }
-}
+// impl<T, H> Drop for Rbtree<T, H> {
+//     fn drop(&mut self) {
+//         if let Some(root) = self.root.take() {
+//             unsafe { Node::destroy_tree(root) }
+//         }
+//     }
+// }
 
 
 // c - current
@@ -324,7 +428,12 @@ where
     H: Hasher + Clone,
 {
     pub(crate) const fn new(hasher: H) -> Self {
-        Self { root: None, size: 0, hasher }
+        Self {
+            arena: Arena::new(),
+            root: None,
+            size: 0,
+            hasher,
+        }
     }
 
     fn hash(&self, item: &T) -> u64 {
@@ -333,20 +442,19 @@ where
         hasher.finish()
     }
 
-    pub(crate) fn find_node(&self, item: &T) -> Option<NonNull<Node<T>>> {
-        let mut n = self.root?;
+    pub(crate) fn find_node(&self, item: &T) -> Option<&Node<T>> {
+        let mut n = self.arena.get(self.root?);
 
         let h = self.hash(item);
 
         loop {
-            let nb = unsafe { n.as_ref() };
-            let next = match (h, item).cmp(&(nb.hash, &nb.item)) {
+            let next = match (h, item).cmp(&(n.hash, &n.item)) {
                 Ordering::Equal => break,
-                Ordering::Less => nb.left,
-                Ordering::Greater => nb.right,
+                Ordering::Less => n.left,
+                Ordering::Greater => n.right,
             };
 
-            n = next?;
+            n = self.arena.get(next?);
         }
 
         Some(n)
@@ -358,401 +466,436 @@ where
     }
 
     pub fn reinsert(&mut self, item: T, hash: u64, generation: u64) -> bool {
-        let mut node = Node {
-            item,
-            hash,
-            generation,
-            red: true,
-            children: 0,
-            min_gen: generation,
-            max_gen: generation,
-            parent: None,
-            left: None,
-            right: None,
-        };
-
-        let Some(mut c) = self.root else {
-            node.red = false;
-            self.size += 1;
-            self.root = Some(unsafe { NonNull::new_unchecked(Box::into_raw(Box::from(node))) });
-            return true;
+        let mut c = match self.root {
+            None => {
+                self.size += 1;
+                self.root = Some(self.arena.alloc(item, hash, generation, false, None));
+                return true;
+            }
+            Some(n) => n,
         };
 
         let mut p;
-        loop {
-            p = c;
-
-            let next = unsafe {
-                match node.cmp(c.as_ref()) {
-                    Ordering::Equal => return false,
-                    Ordering::Less => c.as_ref().left,
-                    Ordering::Greater => c.as_ref().right,
-                }
-            };
-
-            match next {
-                None => break,
-                Some(next) => c = next,
-            };
-        }
-
-        self.size += 1;
-        node.parent = Some(p);
-        let node = unsafe { NonNull::new_unchecked(Box::into_raw(Box::from(node))) };
-
         unsafe {
-            match node.as_ref().cmp(p.as_ref()) {
+            loop {
+                p = c;
+                let cn = self.arena.get(c);
+
+                let next = match hash.cmp(&cn.hash).then_with(|| item.cmp(&cn.item)) {
+                    Ordering::Equal => return false,
+                    Ordering::Less => cn.left,
+                    Ordering::Greater => cn.right,
+                };
+
+                match next {
+                    None => break,
+                    Some(next) => c = next,
+                };
+            }
+
+            self.size += 1;
+            let node = self.arena.alloc(item, hash, generation, true, Some(p));
+            let mut pb = &mut *self.arena.get_mut(p);
+
+            match self.arena.get(node).cmp(pb) {
                 Ordering::Equal => unreachable!(),
-                Ordering::Less => p.as_mut().left = Some(node),
-                Ordering::Greater => p.as_mut().right = Some(node),
+                Ordering::Less => pb.left = Some(node),
+                Ordering::Greater => pb.right = Some(node),
             }
+
+            loop {
+                let mut pb = &mut *self.arena.get_mut(p);
+
+                pb.children += 1;
+
+                if generation > pb.max_gen {
+                    pb.max_gen = generation;
+                } else if generation < pb.min_gen {
+                    pb.min_gen = generation;
+                }
+
+                let next = pb.parent;
+
+                match next {
+                    None => break,
+                    Some(next) => p = next,
+                }
+            }
+
+
+            self.fix_after_insert(node);
+            true
         }
-
-        loop {
-            let pb = unsafe { p.as_mut() };
-
-            pb.children += 1;
-
-            if generation > pb.max_gen {
-                pb.max_gen = generation;
-            } else if generation < pb.min_gen {
-                pb.min_gen = generation;
-            }
-
-            let next = pb.parent;
-
-            match next {
-                None => break,
-                Some(next) => p = next,
-            }
-        }
-
-
-        self.fix_after_insert(node);
-        true
     }
 
     pub fn delete(&mut self, item: &T) -> Option<(T, u64)> {
-        let mut n = self.find_node(item)?;
+        unsafe {
+            let n = self.find_node(item)?.index;
 
-        self.size -= 1;
+            self.size -= 1;
 
-        let nb = unsafe { n.as_mut() };
-        // Ensure the node has only one child by replacing it with its successor
-        let n = if let (Some(_), Some(right)) = (nb.left, nb.right) {
-            let mut s = right;
-            while let Some(l) = unsafe { s.as_ref() }.left {
-                s = l;
-            }
+            let nb = &mut *self.arena.get_mut(n);
+            // Ensure the node has only one child by replacing it with its successor
+            let n = if let (Some(_), Some(right)) = (nb.left, nb.right) {
+                let mut s = right;
+                loop {
+                    let l = match self.arena.get(s).left {
+                        None => break,
+                        Some(l) => l,
+                    };
+                    s = l;
+                }
 
-            let sb = unsafe { s.as_mut() };
-            // Only item, hash, and generation need to be swapped,
-            // the rest will be recalculated in the next step
-            swap(&mut nb.item, &mut sb.item);
-            swap(&mut nb.hash, &mut sb.hash);
-            swap(&mut nb.generation, &mut sb.generation);
-            s
-        } else {
-            n
-        };
+                let sb = &mut *self.arena.get_mut(s);
+                // Only item, hash, and gen need to be swapped,
+                // the rest will be recalculated in the next step
+                swap(&mut nb.item, &mut sb.item);
+                swap(&mut nb.hash, &mut sb.hash);
+                swap(&mut nb.generation, &mut sb.generation);
+                s
+            } else {
+                n
+            };
 
-        let nb = unsafe { n.as_ref() };
-        let p = nb.parent;
+            let nb = self.arena.get(n);
+            let p = nb.parent;
 
-        let Some(mut p) = p else {
-            // Deleting the root
-            match (nb.left, nb.right) {
-                (None, None) => self.root = None,
+            let p = match p {
+                None => {
+                    // Deleting the root
+                    match (nb.left, nb.right) {
+                        (None, None) => self.root = None,
+                        (Some(_), Some(_)) => unreachable!(),
+                        (None, Some(child)) | (Some(child), None) => {
+                            self.root = Some(child);
+                            let mut cb = &mut *self.arena.get_mut(child);
+                            cb.parent = None;
+                            cb.red = false;
+                        }
+                    }
+
+                    // By now there are no pointers to n in the tree and it can be dropped.
+                    let (moved_root, old) = self.arena.dealloc(n);
+                    if moved_root {
+                        self.root = Some(n);
+                    }
+                    return Some((old.item, old.hash));
+                }
+                Some(p) => p,
+            };
+
+            let (c, c_red) = match (nb.left, nb.right) {
+                (None, None) => (None, false),
+                (None, Some(child)) | (Some(child), None) => {
+                    (Some(child), self.arena.get(child).red)
+                }
                 (Some(_), Some(_)) => unreachable!(),
-                (None, Some(mut child)) | (Some(mut child), None) => {
-                    self.root = Some(child);
-                    let cb = unsafe { child.as_mut() };
-                    cb.parent = None;
+            };
+
+            if nb.red || c_red {
+                if let Some(c) = c {
+                    let mut cb = &mut *self.arena.get_mut(c);
                     cb.red = false;
+                    cb.parent = Some(p);
+                }
+
+                let mut pb = &mut *self.arena.get_mut(p);
+                if pb.is_left_child(n) {
+                    pb.left = c;
+                } else {
+                    pb.right = c;
+                }
+            } else {
+                self.fix_black_node_before_delete(n);
+
+                let nb = self.arena.get(n);
+                let p = nb.parent.expect("Impossible");
+                let mut pb = &mut *self.arena.get_mut(p);
+
+                if pb.is_left_child(n) {
+                    pb.left = None;
+                } else {
+                    pb.right = None;
                 }
             }
 
-            // By now there are no other pointers to n and it can be dropped.
-            let n = unsafe { Box::from_raw(n.as_ptr()) };
-
-            return Some((n.item, n.hash));
-        };
-
-        let (c, c_red) = match (nb.left, nb.right) {
-            (None, None) => (None, false),
-            (None, Some(child)) | (Some(child), None) => {
-                (Some(child), unsafe { child.as_ref().red })
-            }
-            (Some(_), Some(_)) => unreachable!(),
-        };
-
-        if nb.red || c_red {
-            if let Some(mut c) = c {
-                let cb = unsafe { c.as_mut() };
-                cb.red = false;
-                cb.parent = Some(p);
+            if let Some(p) = self.arena.get(n).parent {
+                Node::recalc_ancestors(p, &self.arena)
             }
 
-            let pb = unsafe { p.as_mut() };
-            if pb.is_left_child(nb) {
-                pb.left = c;
-            } else {
-                pb.right = c;
+            // By now there are no pointers to n in the tree and it can be dropped.
+            let (moved_root, old) = self.arena.dealloc(n);
+            if moved_root {
+                self.root = Some(n);
             }
-        } else {
-            self.fix_black_node_before_delete(n);
-
-            let nb = unsafe { n.as_ref() };
-            let p = nb.parent;
-            let pb = unsafe { p.unwrap().as_mut() };
-
-            if pb.is_left_child(nb) {
-                pb.left = None;
-            } else {
-                pb.right = None;
-            }
+            Some((old.item, old.hash))
         }
-
-        if let Some(p) = unsafe { n.as_ref().parent } {
-            Node::recalc_ancestors(p)
-        }
-
-        // By now there are no other pointers to n and it can be dropped.
-        let n = unsafe { Box::from_raw(n.as_ptr()) };
-
-        Some((n.item, n.hash))
     }
 
-    fn fix_after_insert(&mut self, node: NonNull<Node<T>>) {
-        unsafe {
-            let mut c = node;
-            let mut p = c.as_ref().parent;
-            while let Some(mut pnd) = p {
-                if !pnd.as_ref().red {
-                    return;
-                }
-
-                let mut g = pnd.as_ref().parent.unwrap();
-                let gb = g.as_mut();
-
-                let ps = gb.other_child(pnd.as_ref());
-
-
-                if let &Some(mut ps) = ps {
-                    let psb = ps.as_mut();
-                    if psb.red {
-                        let pb = pnd.as_mut();
-                        // The parent-sibling is red, so we can continue up the tree
-                        pb.red = false;
-                        psb.red = false;
-                        gb.red = true;
-                        c = g;
-                        p = c.as_ref().parent;
-                        continue;
-                    };
-                };
-
-                if gb.is_left_child(pnd.as_ref()) {
-                    if let Some(pright) = pnd.as_ref().right {
-                        if std::ptr::eq(c.as_ptr(), pright.as_ptr()) {
-                            self.rotate_left(pnd);
-                            pnd = c;
-                        }
-                    }
-
-                    self.rotate_right(g);
-                } else {
-                    if let Some(pleft) = pnd.as_ref().left.as_ref() {
-                        if std::ptr::eq(c.as_ptr(), pleft.as_ptr()) {
-                            self.rotate_right(pnd);
-                            pnd = c;
-                        }
-                    }
-
-                    self.rotate_left(g);
-                }
-                pnd.as_mut().red = false;
-                g.as_mut().red = true;
+    unsafe fn fix_after_insert(&mut self, node: usize) {
+        let mut c = node;
+        let mut p = self.arena.get(c).parent;
+        while let Some(mut pnd) = p {
+            if !self.arena.get(pnd).red {
                 return;
             }
-            // We've replaced the root, and it cannot be red
-            c.as_mut().red = false;
+
+            let g = self.arena.get(pnd).parent.expect("Impossible");
+            let mut gb = &mut *self.arena.get_mut(g);
+
+            let ps = gb.other_child(pnd);
+
+
+            if let Some(ps) = ps {
+                let mut psb = &mut *self.arena.get_mut(ps);
+                if psb.red {
+                    let mut pb = &mut *self.arena.get_mut(pnd);
+                    // The parent-sibling is red, so we can continue up the tree
+                    pb.red = false;
+                    psb.red = false;
+                    gb.red = true;
+                    c = g;
+                    drop(psb);
+                    drop(gb);
+                    drop(pb);
+                    p = self.arena.get(c).parent;
+                    continue;
+                };
+            };
+
+            if gb.is_left_child(pnd) {
+                drop(gb);
+                if let Some(pright) = self.arena.get(pnd).right {
+                    if c == pright {
+                        self.rotate_left(pnd);
+                        pnd = c;
+                    }
+                }
+
+                self.rotate_right(g);
+            } else {
+                drop(gb);
+                if let Some(pleft) = self.arena.get(pnd).left {
+                    if c == pleft {
+                        self.rotate_right(pnd);
+                        pnd = c;
+                    }
+                }
+
+                self.rotate_left(g);
+            }
+            (*self.arena.get_mut(pnd)).red = false;
+            (*self.arena.get_mut(g)).red = true;
+            return;
         }
+        // We've replaced the root, and it cannot be red
+        (*self.arena.get_mut(c)).red = false;
     }
 
     // This is only called when the node to be deleted is a non-root black node, and therefore has
     // a sibling.
-    fn fix_black_node_before_delete(&mut self, mut node: NonNull<Node<T>>) {
-        while unsafe { node.as_ref() }.parent.is_some() {
-            unsafe {
-                let mut p = node.as_ref().parent.expect("Non-root black node must have parent.");
-                let pb = p.as_mut();
-                let mut s =
-                    pb.other_child(node.as_ref()).expect("Non-root black node must have sibling");
+    unsafe fn fix_black_node_before_delete(&mut self, mut node: usize) {
+        while self.arena.get(node).parent.is_some() {
+            // TODO -- we want a parent_and_other_child method
+            let p = self.arena.get(node).parent.expect("Non-root black node must have parent.");
+            let mut pb = &mut *self.arena.get_mut(p);
+            let s = pb.other_child(node).expect("Non-root black node must have sibling");
 
-                let sb = s.as_mut();
+            let mut sb = &mut *self.arena.get_mut(s);
 
-                // The sibling is red, make it black and make it into the new parent.
-                if sb.red {
-                    sb.red = false;
-                    pb.red = true;
-                    let left = pb.is_left_child(node.as_ref());
-                    if left {
-                        self.rotate_left(p);
-                    } else {
-                        self.rotate_right(p);
-                    }
+            // The sibling is red, make it black and make it into the new parent.
+            if sb.red {
+                sb.red = false;
+                pb.red = true;
+                drop(sb);
+                let left = pb.is_left_child(node);
+                drop(pb);
+                if left {
+                    self.rotate_left(p);
+                } else {
+                    self.rotate_right(p);
                 }
+            } else {
+                drop(pb);
+                drop(sb);
             }
 
-            unsafe {
-                let mut p = node.as_ref().parent.expect("Non-root black node must have parent.");
-                let pb = p.as_mut();
-                let mut s =
-                    pb.other_child(node.as_ref()).expect("Non-root black node must have sibling");
+            let p = self.arena.get(node).parent.expect("Non-root black node must have parent.");
+            let mut pb = &mut *self.arena.get_mut(p);
+            let s = pb.other_child(node).expect("Non-root black node must have sibling");
 
-                let sb = s.as_mut();
+            let mut sb = &mut *self.arena.get_mut(s);
 
-                if !pb.red && !sb.red && !sb.has_red_child() {
-                    // All three nodes are black and the sibling has no red children.
-                    // Mark S as red so the subtree rooted at p meets the black-path requirement.
-                    // Continue up the tree.
-                    sb.red = true;
-                    node = p;
-                    continue;
-                }
+            if !pb.red && !sb.red && !sb.has_red_child(&self.arena) {
+                // All three nodes are black and the sibling has no red children.
+                // Mark S as red so the subtree rooted at p meets the black-path requirement.
+                // Continue up the tree.
+                sb.red = true;
+                drop(pb);
+                node = p;
+                continue;
+            }
 
-                if pb.red && !sb.red && !sb.has_red_child() {
-                    // Parent is red, S is black with no red children.
-                    // We can move the redness down to S and maintain the black-path requirement.
-                    sb.red = true;
-                    pb.red = false;
-                    return;
-                }
+            if pb.red && !sb.red && !sb.has_red_child(&self.arena) {
+                // Parent is red, S is black with no red children.
+                // We can move the redness down to S and maintain the black-path requirement.
+                sb.red = true;
+                pb.red = false;
+                return;
+            }
 
-                let sb = s.as_ref();
+            drop(sb);
+            let sb = self.arena.get(s);
 
-                if !sb.red {
-                    // All three nodes are black but S has at least one red child.
-                    // If there is a single red child on the inside, rotate that child onto S.
+            if !sb.red {
+                // All three nodes are black but S has at least one red child.
+                // If there is a single red child on the inside, rotate that child onto S.
 
 
-                    if pb.is_left_child(node.as_ref()) {
-                        if let SoleRedChild::Left(mut l) = sb.sole_red_child() {
-                            l.as_mut().red = false;
-                            s.as_mut().red = true;
-                            self.rotate_right(s);
-                        }
-                    } else if let SoleRedChild::Right(mut r) = sb.sole_red_child() {
-                        r.as_mut().red = false;
-                        s.as_mut().red = true;
-                        self.rotate_left(s);
+                if pb.is_left_child(node) {
+                    if let SoleRedChild::Left(l) = sb.sole_red_child(&self.arena) {
+                        (*self.arena.get_mut(l)).red = false;
+                        drop(sb);
+                        (*self.arena.get_mut(s)).red = true;
+                        drop(pb);
+                        self.rotate_right(s);
+                    } else {
+                        drop(sb);
+                        drop(pb);
                     }
+                } else if let SoleRedChild::Right(r) = sb.sole_red_child(&self.arena) {
+                    (*self.arena.get_mut(r)).red = false;
+                    drop(sb);
+                    (*self.arena.get_mut(s)).red = true;
+                    drop(pb);
+                    self.rotate_left(s);
+                } else {
+                    drop(sb);
+                    drop(pb);
                 }
+            } else {
+                drop(sb);
+                drop(pb);
             }
 
             // S is red or has two red children.
             // Rotate S onto parent and copy parent's colour, make both its children black.
 
-            unsafe {
-                let mut p = node.as_ref().parent.expect("Non-root black node must have parent.");
-                let mut s = p
-                    .as_ref()
-                    .other_child(node.as_ref())
-                    .expect("Non-root black node must have sibling");
+            let p = self.arena.get(node).parent.expect("Non-root black node must have parent.");
+            let s = self
+                .arena
+                .get(p)
+                .other_child(node)
+                .expect("Non-root black node must have sibling");
 
-                let pb = p.as_mut();
-                let sb = s.as_mut();
+            let mut pb = &mut *self.arena.get_mut(p);
+            let mut sb = &mut *self.arena.get_mut(s);
 
-                sb.red = pb.red;
-                pb.red = false;
-                let sb = s.as_ref();
+            sb.red = pb.red;
+            pb.red = false;
+            drop(sb);
+            let sb = self.arena.get(s);
 
-                if pb.is_left_child(node.as_ref()) {
-                    if let Some(mut r) = sb.right {
-                        r.as_mut().red = false;
-                    }
-                    self.rotate_left(p);
-                } else {
-                    if let Some(mut l) = sb.left {
-                        l.as_mut().red = false;
-                    }
-                    self.rotate_right(p);
+            if pb.is_left_child(node) {
+                if let Some(r) = sb.right {
+                    (*self.arena.get_mut(r)).red = false;
                 }
+                drop(sb);
+                drop(pb);
+                self.rotate_left(p);
+            } else {
+                if let Some(l) = sb.left {
+                    (*self.arena.get_mut(l)).red = false;
+                }
+                drop(sb);
+                drop(pb);
+                self.rotate_right(p);
             }
 
             return;
         }
     }
 
-    fn rotate_right(&mut self, mut parent: NonNull<Node<T>>) {
+    unsafe fn rotate_right(&mut self, parent: usize) {
         // Left child becomes the new parent
-        let pb = unsafe { parent.as_mut() };
-        let mut l = pb.left.expect("Tried to make None child into parent");
-        let lb = unsafe { l.as_mut() };
+        let mut pb = &mut *self.arena.get_mut(parent);
+        let l = pb.left.expect("Tried to make None child into parent");
+        let mut lb = &mut *self.arena.get_mut(l);
 
         pb.left = lb.right.take();
-        if let Some(mut p_left) = pb.left {
-            unsafe { p_left.as_mut() }.parent = Some(parent);
+        if let Some(p_left) = pb.left {
+            (*self.arena.get_mut(p_left)).parent = Some(parent);
         }
 
         lb.right = Some(parent);
         lb.parent = pb.parent.take();
         pb.parent = Some(l);
+        drop(pb);
 
-        if let Some(mut l_parent) = lb.parent {
-            let lpb = unsafe { l_parent.as_mut() };
-            if lpb.is_left_child(pb) {
+        if let Some(l_parent) = lb.parent {
+            let mut lpb = &mut *self.arena.get_mut(l_parent);
+            if lpb.is_left_child(parent) {
                 lpb.left = Some(l);
             } else {
                 lpb.right = Some(l);
             }
+            drop(lpb);
+            drop(lb);
         } else {
+            drop(lb);
             self.root = Some(l)
         }
 
-        unsafe { parent.as_mut() }.recalculate();
-        unsafe { l.as_mut() }.recalculate();
+        (*self.arena.get_mut(parent)).recalculate(&self.arena);
+        (*self.arena.get_mut(l)).recalculate(&self.arena);
     }
 
-    fn rotate_left(&mut self, mut parent: NonNull<Node<T>>) {
+    unsafe fn rotate_left(&mut self, parent: usize) {
         // Right child becomes the new parent
-        let pb = unsafe { parent.as_mut() };
-        let mut r = pb.right.expect("Tried to make None child into parent");
-        let rb = unsafe { r.as_mut() };
+        let mut pb = &mut *self.arena.get_mut(parent);
+        let r = pb.right.expect("Tried to make None child into parent");
+        let mut rb = &mut *self.arena.get_mut(r);
 
         pb.right = rb.left.take();
-        if let Some(mut p_right) = pb.right {
-            unsafe { p_right.as_mut() }.parent = Some(parent);
+        if let Some(p_right) = pb.right {
+            (*self.arena.get_mut(p_right)).parent = Some(parent);
         }
 
         rb.left = Some(parent);
         rb.parent = pb.parent.take();
         pb.parent = Some(r);
+        drop(pb);
 
-        if let Some(mut r_parent) = rb.parent {
-            let rpb = unsafe { r_parent.as_mut() };
-            if !rpb.is_left_child(pb) {
+        if let Some(r_parent) = rb.parent {
+            let mut rpb = &mut *self.arena.get_mut(r_parent);
+            if !rpb.is_left_child(parent) {
                 rpb.right = Some(r);
             } else {
                 rpb.left = Some(r);
             }
+            drop(rpb);
+            drop(rb);
         } else {
+            drop(rb);
             self.root = Some(r)
         }
 
-        unsafe { parent.as_mut() }.recalculate();
-        unsafe { r.as_mut() }.recalculate();
+        (*self.arena.get_mut(parent)).recalculate(&self.arena);
+        (*self.arena.get_mut(r)).recalculate(&self.arena);
     }
 
     // Only to be used when the generation would overflow a u64
     pub(crate) fn reset(&mut self) {
-        if let Some(mut root) = self.root {
-            unsafe { root.as_mut().reset() }
+        for node in &mut self.arena.vec {
+            let node = node.get_mut();
+            node.generation = 0;
+            node.min_gen = 0;
+            node.max_gen = 0;
         }
     }
 
-    // Finds the next item with a generation <= g after index (inclusive).
+    // Finds the next item with a generation <= g after index (inclusive) from left to right in the
+    // tree.
     // Wraps around to the start of the tree if one isn't found.
     #[allow(clippy::missing_panics_doc)]
     pub fn find_next(&self, index: usize, generation: u64) -> NonNull<Node<T>> {
@@ -760,58 +903,48 @@ where
         assert!(index < self.size);
         let root = self.root.expect("Root cannot be None in a tree with size > 0");
 
-        Node::find_above(root, index, generation)
-            .or_else(|_| Node::find_above(root, 0, generation))
+        Node::find_above(root, &self.arena, index, generation)
+            .or_else(|_| Node::find_above(root, &self.arena, 0, generation))
             .expect("Corrupt tree")
     }
 
     pub(crate) fn values(&self) -> Vec<&T> {
-        let mut out = Vec::with_capacity(self.size);
-
-        if let Some(root) = &self.root {
-            unsafe { root.as_ref().values(&mut out) };
-        }
-
-        out
+        unsafe { self.arena.vec.iter().map(|n| &n.get().as_ref().unwrap().item).collect() }
     }
 
-    pub(crate) fn into_values(mut self) -> Vec<T> {
-        let mut out = Vec::with_capacity(self.size);
-
-        // It's safe to take() self.root as self will immediately be dropped, which does not care
-        // about size being stale.
-        if let Some(root) = self.root.take() {
-            unsafe { Node::into_values(root, &mut out) };
-        }
-
-        out
+    pub(crate) fn into_values(self) -> Vec<T> {
+        self.arena.vec.into_iter().map(UnsafeCell::into_inner).map(|n| n.item).collect()
     }
 
     pub(crate) fn dump(&self) -> Vec<(&T, u64)> {
-        let mut out = Vec::with_capacity(self.size);
-
-        if let Some(root) = &self.root {
-            unsafe { root.as_ref().dump(&mut out) };
+        unsafe {
+            self.arena
+                .vec
+                .iter()
+                .map(|n| {
+                    let n = &n.get().as_ref().unwrap();
+                    (&n.item, n.generation)
+                })
+                .collect()
         }
-
-        out
     }
 
     pub(crate) const fn size(&self) -> usize {
-        if let Some(root) = &self.root {
-            unsafe { root.as_ref().children + 1 }
-        } else {
-            0
-        }
+        self.arena.vec.len()
     }
 
-    pub(crate) const fn generations(&self) -> (u64, u64) {
+    pub(crate) fn generations(&self) -> (u64, u64) {
         if let Some(root) = self.root {
-            let root = unsafe { root.as_ref() };
+            let root = self.arena.get(root);
             (root.min_gen, root.max_gen)
         } else {
             (0, 0)
         }
+    }
+
+    // SAFETY: Must not be actively referencing any Nodes in the tree
+    pub(crate) unsafe fn set_generation(&self, node: usize, next_gen: u64) {
+        Node::set_generation(node, &self.arena, next_gen);
     }
 }
 
@@ -820,15 +953,15 @@ impl<T> Node<T>
 where
     T: Item + std::fmt::Display + Debug,
 {
-    fn pprint(&self, prefix: String) -> String {
+    fn pprint(&self, a: &Arena<T>, prefix: String) -> String {
         let left = if let Some(left) = self.left {
-            unsafe { left.as_ref().pprint(prefix.clone() + "  ") }
+            a.get(left).pprint(a, prefix.clone() + "  ")
         } else {
             String::new()
         };
 
         let right = if let Some(right) = self.right {
-            unsafe { right.as_ref().pprint(prefix.clone() + "  ") }
+            a.get(right).pprint(a, prefix.clone() + "  ")
         } else {
             String::new()
         };
@@ -841,33 +974,25 @@ where
         )
     }
 
-    fn print(&self) -> String {
-        let left = if let Some(left) = self.left {
-            unsafe { left.as_ref().print() }
-        } else {
-            String::new()
-        };
+    fn print(&self, a: &Arena<T>) -> String {
+        let left = self.left.map(|n| a.get(n).print(a)).unwrap_or_default();
 
-        let right = if let Some(right) = self.right {
-            unsafe { right.as_ref().print() }
-        } else {
-            String::new()
-        };
+        let right = self.right.map(|n| a.get(n).print(a)).unwrap_or_default();
 
         let c = if self.red { "r" } else { "b" };
 
         format!("({} {} {c} {left} {right})", self.item, self.generation)
     }
 
-    fn verify(&self) -> usize {
+    fn verify(&self, a: &Arena<T>) -> usize {
         let mut min_gen = self.generation;
         let mut max_gen = self.generation;
         let mut children = 0;
 
         unsafe {
             let (l_black, l_red) = if let Some(left) = self.left {
-                let lb = left.as_ref();
-                assert_eq!(self, lb.parent.unwrap().as_ref());
+                let lb = a.get(left);
+                assert_eq!(self.index, lb.parent.unwrap());
 
                 assert!(self.hash >= lb.hash);
                 assert!(self > lb);
@@ -875,14 +1000,14 @@ where
                 children += lb.children + 1;
                 min_gen = min(min_gen, lb.min_gen);
                 max_gen = max(max_gen, lb.max_gen);
-                (lb.verify(), lb.red)
+                (lb.verify(a), lb.red)
             } else {
                 (0, false)
             };
 
             let (r_black, r_red) = if let Some(right) = self.right {
-                let rb = right.as_ref();
-                assert_eq!(self, rb.parent.unwrap().as_ref());
+                let rb = a.get(right);
+                assert_eq!(self.index, rb.parent.unwrap());
 
                 assert!(self.hash <= rb.hash);
                 assert!(self < rb);
@@ -890,7 +1015,7 @@ where
                 children += rb.children + 1;
                 min_gen = min(min_gen, rb.min_gen);
                 max_gen = max(max_gen, rb.max_gen);
-                (rb.verify(), rb.red)
+                (rb.verify(a), rb.red)
             } else {
                 (0, false)
             };
@@ -916,17 +1041,13 @@ where
 {
     #[allow(dead_code)]
     pub(super) fn pprint(&self) -> String {
-        match self.root {
-            Some(r) => unsafe { r.as_ref().pprint(String::new()) },
-            None => String::new(),
-        }
+        self.root
+            .map(|r| self.arena.get(r).pprint(&self.arena, String::new()))
+            .unwrap_or_default()
     }
 
     fn print(&self) -> String {
-        match self.root {
-            Some(r) => unsafe { r.as_ref().print() },
-            None => String::new(),
-        }
+        self.root.map(|r| self.arena.get(r).print(&self.arena)).unwrap_or_default()
     }
 
     fn verify(&self) {
@@ -935,13 +1056,13 @@ where
                 assert_eq!(self.size, 0);
             }
             Some(root) => {
-                let rb = unsafe { root.as_ref() };
+                let rb = self.arena.get(root);
 
                 assert_eq!(self.size, rb.children + 1);
                 assert!(rb.parent.is_none());
                 assert!(!rb.red);
 
-                rb.verify();
+                rb.verify(&self.arena);
             }
         }
     }
@@ -958,15 +1079,15 @@ pub mod tests {
     use ahash::{AHashMap, RandomState};
     use rand::prelude::SliceRandom;
 
-    use super::{Node, Rbtree};
+    use super::{Arena, Node, Rbtree};
 
     #[derive(Clone)]
-    pub(crate) struct DummyHasher {
-        values: Rc<AHashMap<&'static str, u64>>,
+    pub(crate) struct DummyHasher<'a> {
+        values: Rc<AHashMap<&'a str, u64>>,
         val: u64,
     }
 
-    impl Hasher for DummyHasher {
+    impl Hasher for DummyHasher<'_> {
         fn finish(&self) -> u64 {
             self.val
         }
@@ -979,10 +1100,11 @@ pub mod tests {
         }
     }
 
-    impl Rbtree<&'static str, DummyHasher> {
+    impl<'a> Rbtree<&'a str, DummyHasher<'a>> {
         pub(crate) fn new_dummy(entries: &[(&'static str, u64)]) -> Self {
             let hashes: AHashMap<_, _> = entries.iter().copied().collect();
             Self {
+                arena: super::Arena::new(),
                 root: None,
                 size: 0,
                 hasher: DummyHasher { val: 0, values: Rc::from(hashes) },
@@ -1024,7 +1146,12 @@ pub mod tests {
         // ahash may change output when updated, so this test may fail after updating dependencies
         // Can also fail in miri due to different hash output, but not UB.
         let hasher = RandomState::with_seeds(100, 200, 300, 400).build_hasher();
-        let mut rb = Rbtree { root: None, size: 0, hasher };
+        let mut rb = Rbtree {
+            arena: Arena::new(),
+            root: None,
+            size: 0,
+            hasher,
+        };
 
         assert!(rb.insert("5", 0));
         assert!(rb.insert("4", 1));
@@ -1034,7 +1161,12 @@ pub mod tests {
         assert_eq!(rb.print(), "(4 1 b (5 0 r  ) (6 2 r  ))");
 
         let hasher = RandomState::with_seeds(400, 300, 200, 100).build_hasher();
-        let mut rb = Rbtree { root: None, size: 0, hasher };
+        let mut rb = Rbtree {
+            arena: Arena::new(),
+            root: None,
+            size: 0,
+            hasher,
+        };
 
         assert!(rb.insert("5", 0));
         assert!(rb.insert("4", 1));
@@ -1371,18 +1503,18 @@ pub mod tests {
         });
 
         unsafe {
-            assert_eq!((rb.find_next(0, 10).as_ref()).item, "00");
-            assert_eq!((rb.find_next(0, 0).as_ref()).item, "10");
-            assert_eq!((rb.find_next(0, 1).as_ref()).item, "09");
-            assert_eq!((rb.find_next(0, 5).as_ref()).item, "05");
-            assert_eq!((rb.find_next(8, 5).as_ref()).item, "08");
-            assert_eq!((rb.find_next(8, 9).as_ref()).item, "08");
-            assert_eq!((rb.find_next(8, 2).as_ref()).item, "08");
-            assert_eq!((rb.find_next(8, 1).as_ref()).item, "09");
-            assert_eq!((rb.find_next(10, 0).as_ref()).item, "10");
-            assert_eq!((rb.find_next(10, 1).as_ref()).item, "10");
-            assert_eq!((rb.find_next(10, 5).as_ref()).item, "10");
-            assert_eq!((rb.find_next(10, 10).as_ref()).item, "10");
+            assert_eq!((*(rb.find_next(0, 10).as_ref())).item, "00");
+            assert_eq!((*(rb.find_next(0, 0).as_ref())).item, "10");
+            assert_eq!((*(rb.find_next(0, 1).as_ref())).item, "09");
+            assert_eq!((*(rb.find_next(0, 5).as_ref())).item, "05");
+            assert_eq!((*(rb.find_next(8, 5).as_ref())).item, "08");
+            assert_eq!((*(rb.find_next(8, 9).as_ref())).item, "08");
+            assert_eq!((*(rb.find_next(8, 2).as_ref())).item, "08");
+            assert_eq!((*(rb.find_next(8, 1).as_ref())).item, "09");
+            assert_eq!((*(rb.find_next(10, 0).as_ref())).item, "10");
+            assert_eq!((*(rb.find_next(10, 1).as_ref())).item, "10");
+            assert_eq!((*(rb.find_next(10, 5).as_ref())).item, "10");
+            assert_eq!((*(rb.find_next(10, 10).as_ref())).item, "10");
         }
     }
 
@@ -1397,17 +1529,17 @@ pub mod tests {
         });
 
         unsafe {
-            assert_eq!((rb.find_next(0, 10).as_ref()).item, "00");
-            assert_eq!((rb.find_next(0, 4).as_ref()).item, "01");
-            assert_eq!((rb.find_next(0, 1).as_ref()).item, "01");
-            assert_eq!((rb.find_next(0, 5).as_ref()).item, "00");
-            assert_eq!((rb.find_next(8, 5).as_ref()).item, "00");
-            assert_eq!((rb.find_next(8, 9).as_ref()).item, "08");
-            assert_eq!((rb.find_next(8, 2).as_ref()).item, "01");
-            assert_eq!((rb.find_next(8, 1).as_ref()).item, "01");
-            assert_eq!((rb.find_next(10, 1).as_ref()).item, "01");
-            assert_eq!((rb.find_next(10, 5).as_ref()).item, "00");
-            assert_eq!((rb.find_next(10, 10).as_ref()).item, "10");
+            assert_eq!((*(rb.find_next(0, 10).as_ref())).item, "00");
+            assert_eq!((*(rb.find_next(0, 4).as_ref())).item, "01");
+            assert_eq!((*(rb.find_next(0, 1).as_ref())).item, "01");
+            assert_eq!((*(rb.find_next(0, 5).as_ref())).item, "00");
+            assert_eq!((*(rb.find_next(8, 5).as_ref())).item, "00");
+            assert_eq!((*(rb.find_next(8, 9).as_ref())).item, "08");
+            assert_eq!((*(rb.find_next(8, 2).as_ref())).item, "01");
+            assert_eq!((*(rb.find_next(8, 1).as_ref())).item, "01");
+            assert_eq!((*(rb.find_next(10, 1).as_ref())).item, "01");
+            assert_eq!((*(rb.find_next(10, 5).as_ref())).item, "00");
+            assert_eq!((*(rb.find_next(10, 10).as_ref())).item, "10");
         }
     }
 
@@ -1527,7 +1659,7 @@ pub mod tests {
 
         let n = rb.find_next(0, 2);
 
-        unsafe { Node::set_generation(n, 1000) };
+        unsafe { rb.set_generation((*n.as_ref()).index, 1000) };
 
         assert_eq!(rb.print(), "(5 5 b (2 1000 r  ) (7 7 r  ))");
         rb.verify();
