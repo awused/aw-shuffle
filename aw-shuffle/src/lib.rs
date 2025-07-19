@@ -325,7 +325,7 @@ where
         let node = self.tree.find_next(index, random_gen);
         let (next_gen, _) = self.next_generation();
 
-        Node::set_generation(node, next_gen.get());
+        unsafe { Node::set_generation(node, next_gen.get()) };
 
         unsafe { Ok(Some(node.as_ref().get())) }
     }
@@ -350,7 +350,7 @@ where
             let node = self.tree.find_next(index, random_gen);
 
             // Set the generation here to try to prioritize other items.
-            Node::set_generation(node, next_gen.get());
+            unsafe { Node::set_generation(node, next_gen.get()) };
 
             selected.push(node)
         }
@@ -381,7 +381,7 @@ where
             let node = self.tree.find_next(index, random_gen);
 
             // Set the generation here to try to prioritize other items.
-            Node::set_generation(node, next_gen.get());
+            unsafe { Node::set_generation(node, next_gen.get()) };
 
             selected.push(node)
         }

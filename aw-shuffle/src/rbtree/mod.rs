@@ -155,7 +155,8 @@ impl<T> Node<T> {
         }
     }
 
-    pub(crate) fn set_generation(mut node: NonNull<Self>, next_gen: u64) {
+    // SAFETY: Must have no active references to any nodes
+    pub(crate) unsafe fn set_generation(mut node: NonNull<Self>, next_gen: u64) {
         let n = unsafe { node.as_mut() };
         if n.generation != next_gen {
             n.generation = next_gen;
@@ -1526,7 +1527,7 @@ pub mod tests {
 
         let n = rb.find_next(0, 2);
 
-        Node::set_generation(n, 1000);
+        unsafe { Node::set_generation(n, 1000) };
 
         assert_eq!(rb.print(), "(5 5 b (2 1000 r  ) (7 7 r  ))");
         rb.verify();
