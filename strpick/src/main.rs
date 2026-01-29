@@ -4,8 +4,8 @@ use std::io::BufRead;
 use std::path::{Path, PathBuf};
 
 use aw_shuffle::AwShuffler;
-use aw_shuffle::persistent::PersistentShuffler;
 use aw_shuffle::persistent::rocksdb::Shuffler;
+use aw_shuffle::persistent::{Options as ShuffleOptions, PersistentShuffler};
 use clap::{Parser, Subcommand};
 use rocksdb::{DB, Options};
 use tempfile::tempdir;
@@ -15,7 +15,7 @@ use unicode_width::UnicodeWidthStr;
 #[command(name = "strpick", about = "Selects random strings from stdin.")]
 struct Opt {
     #[arg(long, value_parser)]
-    /// The RocksDB database used for storing persistent data between runs.
+    /// The `RocksDB` database used for storing persistent data between runs.
     db: PathBuf,
 
     #[command(subcommand)]
@@ -26,7 +26,14 @@ struct Opt {
 enum Command {
     /// Read strings from stdin and pick NUM of them, attempting to make them unique.
     /// If no strings are provided the DB will be read as-is.
-    Pick { num: usize },
+    Pick {
+        num: usize,
+
+        #[arg(long)]
+        /// Keep old values in the persistent database even if they're not present in the values
+        /// being shuffled this time.
+        keep_old: bool,
+    },
     /// Dump the current contents of the database to stdout.
     /// This will work on any aw-shuffler databases that store strings.
     Dump,
@@ -41,7 +48,7 @@ fn main() {
 
 
     match &opt.cmd {
-        Command::Pick { num } => pick(&opt.db, *num),
+        Command::Pick { num, keep_old } => pick(&opt.db, *num, *keep_old),
         Command::Dump => dump(&opt.db, |v| {
             if let rmpv::Value::String(s) = v {
                 s.as_str().unwrap().to_owned()
@@ -96,13 +103,15 @@ fn print(mut vals: Vec<(String, u64)>) {
     }
 }
 
-fn pick(db: &Path, num: usize) {
+fn pick(db: &Path, num: usize, keep_old: bool) {
     let stdin = io::stdin();
     let strings: Vec<_> = stdin.lock().lines().map_while(Result::ok).collect();
 
     let strings = if !strings.is_empty() { Some(strings) } else { None };
 
-    let mut s: Shuffler<String> = Shuffler::new_default(db, strings)
+    let options = ShuffleOptions::default().keep_unrecognized(keep_old);
+
+    let mut s: Shuffler<String> = Shuffler::new(db, options, strings)
         .unwrap_or_else(|e| panic!("Failed to open the database at {db:?}: {e}"));
 
     for s in s.try_unique_n(num).unwrap().into_iter().flatten() {

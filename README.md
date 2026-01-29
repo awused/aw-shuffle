@@ -50,19 +50,22 @@ let next_number = match shuffler.inf_next() {
 // More likely to be one of the four not already selected.
 let second_number = shuffler.next().unwrap().unwrap();
 
-// This returns 3 items, where it's more likely that the items are from the 3 that haven't
-// been previously selected. It's possible for this to have repeats.
-let next_3_numbers = shuffler.next_n(3).unwrap().unwrap();
+// This returns 3 items, where it's more likely that the items are from the 3
+// that haven't been previously selected. It's possible for this to have repeats.
+let next_3_numbers = shuffler.next_n(3)??;
 
 // Will contain repeats, but is not guaranteed to contain every single number.
-let next_10_numbers = shuffler.next_n(10).unwrap().unwrap();
+let next_10_numbers = shuffler.next_n(10)??;
 
 // Will not contain repeats.
-let next_3_unique_numbers = shuffler.unique_n(3).unwrap().unwrap();
+let next_3_unique_numbers = shuffler.unique_n(3)??;
 
-// Every number exactly once. After this, all numbers in the tree have the same generation
-// assigned since there are only 5 numbers in this example.
-let next_5_unique_numbers = shuffler.unique_n(5).unwrap().unwrap();
+// Every number exactly once, since there are 5. After this, all numbers in the tree have the same
+// generation assigned since there are only 5 numbers in this example.
+let next_5_unique_numbers = shuffler.unique_n(5)??;
+
+// Trying to ask for more items than exist will fail
+assert!(shuffler.unique_n(6)?.is_none());
 
 // Try to get 10 unique items, which will fail, but fall back to getting 10 non-unique
 // items.
@@ -84,6 +87,8 @@ shufflers. If close is not called any errors will be lost on drop.
 ## Standalone Executable
 
 The [strpick](https://github.com/awused/aw-shuffle/strpick) directory contains a standalone executable that can be used in shell scripts to select random strings. It reads newline separated strings from stdin and uses a RocksDB database for persistence between runs.
+
+Install with `cargo install --locked --git https://github.com/awused/aw-shuffle --bin strpick`.
 
 ## How It Works
 

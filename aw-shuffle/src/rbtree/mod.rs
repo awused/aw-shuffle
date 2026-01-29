@@ -21,9 +21,9 @@ pub struct Node<T> {
     children: usize,
     min_gen: u64,
     max_gen: u64,
-    parent: Option<NonNull<Node<T>>>,
-    left: Option<NonNull<Node<T>>>,
-    right: Option<NonNull<Node<T>>>,
+    parent: Option<NonNull<Self>>,
+    left: Option<NonNull<Self>>,
+    right: Option<NonNull<Self>>,
 }
 
 impl<T: Ord> Ord for Node<T> {
@@ -85,10 +85,10 @@ impl<T> Node<T> {
     }
 
     const fn has_red_child(&self) -> bool {
-        if let Some(left) = self.left {
-            if unsafe { left.as_ref() }.red {
-                return true;
-            }
+        if let Some(left) = self.left
+            && unsafe { left.as_ref() }.red
+        {
+            return true;
         }
 
         if let Some(right) = self.right {
@@ -553,20 +553,20 @@ where
                 };
 
                 if gb.is_left_child(pnd.as_ref()) {
-                    if let Some(pright) = pnd.as_ref().right {
-                        if std::ptr::eq(c.as_ptr(), pright.as_ptr()) {
-                            self.rotate_left(pnd);
-                            pnd = c;
-                        }
+                    if let Some(pright) = pnd.as_ref().right
+                        && std::ptr::eq(c.as_ptr(), pright.as_ptr())
+                    {
+                        self.rotate_left(pnd);
+                        pnd = c;
                     }
 
                     self.rotate_right(g);
                 } else {
-                    if let Some(pleft) = pnd.as_ref().left.as_ref() {
-                        if std::ptr::eq(c.as_ptr(), pleft.as_ptr()) {
-                            self.rotate_right(pnd);
-                            pnd = c;
-                        }
+                    if let Some(pleft) = pnd.as_ref().left.as_ref()
+                        && std::ptr::eq(c.as_ptr(), pleft.as_ptr())
+                    {
+                        self.rotate_right(pnd);
+                        pnd = c;
                     }
 
                     self.rotate_left(g);
@@ -1329,7 +1329,7 @@ pub mod tests {
     #[test]
     fn fuzz_insert_delete() {
         #[cfg(not(miri))]
-        let input = sequential_strings(100000);
+        let input = sequential_strings(100_000);
         // Use a smaller set for miri since it's way too slow with large sets
         #[cfg(miri)]
         let input = sequential_strings(100);
