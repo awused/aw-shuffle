@@ -40,7 +40,6 @@ pub trait InfallibleShuffler: AwShuffler {
     /// request or when the shuffler is empty, even if `n` is 0.
     fn inf_unique_n(&mut self, n: usize) -> Option<Vec<&Self::Item>>;
 
-
     /// Returns the next `n` unique items, if enough unique items exist, otherwise returns the next
     /// `n` items ignoring uniqueness.
     ///

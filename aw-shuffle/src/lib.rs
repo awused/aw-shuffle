@@ -9,7 +9,8 @@ use std::num::NonZeroU64;
 use ahash::AHasher;
 use rand::distr::Uniform;
 use rand::prelude::{Distribution, StdRng};
-use rand::{Rng, SeedableRng};
+use rand::rngs::SysRng;
+use rand::{Rng, RngExt, SeedableRng, TryRng};
 use rbtree::{Node, Rbtree};
 
 mod infallible;
@@ -95,7 +96,11 @@ pub trait AwShuffler: private::Sealed {
     /// Returns `Ok(None)` when the shuffler is empty.
     fn try_unique_n(&mut self, n: usize) -> Result<Option<Vec<&Self::Item>>, Self::Error> {
         let s = self.size();
-        if s == 0 || s < n { self.next_n(n) } else { self.unique_n(n) }
+        if s == 0 || s < n {
+            self.next_n(n)
+        } else {
+            self.unique_n(n)
+        }
     }
 
     /// Returns the number of items currently in the shuffler.
@@ -164,16 +169,16 @@ pub struct ShufflerGeneric<T, H, R> {
     new_items: NewItemHandling,
 }
 
-
 /// Type alias for [`ShufflerGeneric`] with the default hasher and rng implementations.
 pub type Shuffler<T> = ShufflerGeneric<T, AHasher, StdRng>;
 
-
 impl<T: Item> Default for Shuffler<T> {
     fn default() -> Self {
+        let mut seed = [0u8; 32];
+        SysRng.try_fill_bytes(&mut seed).unwrap();
         Self {
             tree: Rbtree::default(),
-            rng: StdRng::from_os_rng(),
+            rng: StdRng::from_seed(seed),
             bias: 2.0,
             new_items: NewItemHandling::NeverSelected,
         }
@@ -195,10 +200,12 @@ impl<T> Shuffler<T> {
     pub fn new(bias: f64, new_item_handling: NewItemHandling) -> Self {
         assert!(!bias.is_nan(), "bias {bias} cannot be NaN.");
         assert!(bias.is_sign_positive(), "bias {bias} cannot be negative.");
+        let mut seed = [0u8; 32];
+        SysRng.try_fill_bytes(&mut seed).unwrap();
 
         Self {
             tree: Rbtree::default(),
-            rng: StdRng::from_os_rng(),
+            rng: StdRng::from_seed(seed),
             bias,
             new_items: new_item_handling,
         }
@@ -355,8 +362,10 @@ where
             selected.push(node)
         }
 
-
-        let output = selected.into_iter().map(|n| unsafe { n.as_ref().get() }).collect();
+        let output = selected
+            .into_iter()
+            .map(|n| unsafe { n.as_ref().get() })
+            .collect();
 
         Ok(Some(output))
     }
@@ -386,8 +395,10 @@ where
             selected.push(node)
         }
 
-
-        let output = selected.into_iter().map(|n| unsafe { n.as_ref().get() }).collect();
+        let output = selected
+            .into_iter()
+            .map(|n| unsafe { n.as_ref().get() })
+            .collect();
 
         Ok(Some(output))
     }
@@ -411,26 +422,29 @@ where
 
 #[cfg(test)]
 mod tests {
-    use rand::RngCore;
+    use std::convert::Infallible;
+
+    use rand::{Rng, TryRng};
 
     use crate::rbtree::Rbtree;
     use crate::{AwShuffler, InfallibleShuffler, NewItemHandling, ShufflerGeneric};
 
-
     #[derive(Default)]
     struct AlwaysOldestRnd {}
 
-    impl RngCore for AlwaysOldestRnd {
-        fn next_u32(&mut self) -> u32 {
+    impl TryRng for AlwaysOldestRnd {
+        type Error = Infallible;
+
+        fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
             // With Lemire's method in rand, returning 0 here will always fail
-            rand::rng().next_u32()
+            Ok(rand::rng().next_u32())
         }
 
-        fn next_u64(&mut self) -> u64 {
-            0
+        fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
+            Ok(0)
         }
 
-        fn fill_bytes(&mut self, _dest: &mut [u8]) {
+        fn try_fill_bytes(&mut self, _dst: &mut [u8]) -> Result<(), Self::Error> {
             unimplemented!()
         }
     }
